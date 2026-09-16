@@ -59,7 +59,10 @@ jobs:
         with:
           name: dist
           path: dist
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: false
+      - run: uv publish --trusted-publishing always
 
   testpypi:
     needs: build
@@ -77,9 +80,10 @@ jobs:
         with:
           name: dist
           path: dist
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
-          repository-url: https://test.pypi.org/legacy/
+          enable-cache: false
+      - run: uv publish --trusted-publishing always --publish-url https://test.pypi.org/legacy/
 
   attach:
     needs: build
