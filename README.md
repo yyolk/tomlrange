@@ -38,7 +38,7 @@ from tomlrange import Domain
 Month = Domain(int, lo=1, hi=12, name="month")
 
 data = tomllib.loads(config)
-year = Month.bound(data["months"])       # 1..12
+year = Month.bound(data["months"])  # 1..12
 windows = Month.bounds(data["windows"])  # 1..4 and 6..10
 
 assert list(year) == list(range(1, 13))
@@ -64,13 +64,15 @@ Or name the domain by subclassing `Spec` — the class body is the schema:
 ```python
 from tomlrange import Spec
 
+
 class Month(Spec):
     typ = int
     lo = 1
     hi = 12
 
+
 Month.parse({"from": 1, "to": 4})
-Month.parse_many([{ "from": 1, "to": 4 }, { "from": 6, "to": 10 }])
+Month.parse_many([{"from": 1, "to": 4}, {"from": 6, "to": 10}])
 ```
 
 ## Validation
