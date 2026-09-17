@@ -38,7 +38,7 @@ from tomlrange import Domain
 Month = Domain(int, lo=1, hi=12, name="month")
 
 data = tomllib.loads(config)
-year = Month.bound(data["months"])  # 1..12
+year = Month.bound(data["months"])       # 1..12
 windows = Month.bounds(data["windows"])  # 1..4 and 6..10
 
 assert list(year) == list(range(1, 13))
@@ -64,15 +64,13 @@ Or name the domain by subclassing `Spec` — the class body is the schema:
 ```python
 from tomlrange import Spec
 
-
 class Month(Spec):
     typ = int
     lo = 1
     hi = 12
 
-
 Month.parse({"from": 1, "to": 4})
-Month.parse_many([{"from": 1, "to": 4}, {"from": 6, "to": 10}])
+Month.parse_many([{ "from": 1, "to": 4 }, { "from": 6, "to": 10 }])
 ```
 
 ## Validation
@@ -89,6 +87,10 @@ On a list, `overlap=` is `"reject"` (default), `"allow"`, or `"merge"`.
 Reject treats a shared endpoint as overlap (`1–4` and `4–6` fail).
 Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
 
+`list()`, `len()`, `width`, and `as_range()` are int-only — they raise
+`TypeError` (`"{name} width is only defined for int"`). Membership,
+`as_tuple()`, and `as_table()` work for any ordered `typ`.
+
 Errors carry a path:
 
 ```
@@ -102,6 +104,7 @@ months_ranges[1].to: 13 is above month 12
 - Not a two-element array (`[1, 12]`). After TOML decode that is a list, not a table.
 - Not wrap-around (`from = 11, to = 2`). Write two spans.
 - Not `step`. A range table is a closed interval.
+- Not iteration over a non-int domain. Walk dates or strings yourself.
 
 ## Install
 

@@ -122,6 +122,29 @@ def test_custom_keys() -> None:
         hours.bound({"from": 7, "to": 16})
     with pytest.raises(TomlRangeError, match="must have keys"):
         hours.bound({"start": 7})
+    with pytest.raises(
+        TomlRangeError, match=r"expected a table \{ start = …, end = … \}"
+    ):
+        hours.bound([7, 16])
+
+
+def test_int_only_iteration() -> None:
+    labels = Domain(str, name="label")
+    bound = labels.bound({"from": "a", "to": "c"})
+    assert bound.as_tuple() == ("a", "c")
+    assert "b" in bound
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        list(bound)
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        len(bound)
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        _ = bound.width
+    spans = labels.bounds([{"from": "a", "to": "b"}, {"from": "d", "to": "e"}])
+    assert "a" in spans
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        list(spans)
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        len(spans)
 
 
 def test_error_paths() -> None:
