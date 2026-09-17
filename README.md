@@ -1,5 +1,11 @@
 # tomlrange
 
+[![PyPI version](https://img.shields.io/pypi/v/tomlrange.svg)](https://pypi.org/project/tomlrange/)
+[![Python versions](https://img.shields.io/pypi/pyversions/tomlrange.svg)](https://pypi.org/project/tomlrange/)
+[![CI](https://img.shields.io/github/actions/workflow/status/yyolk/tomlrange/ci.yml?branch=main)](https://github.com/yyolk/tomlrange/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/yyolk/tomlrange)](https://github.com/yyolk/tomlrange/blob/main/LICENSE)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/yyolk/tomlrange/main.svg)](https://results.pre-commit.ci/latest/github/yyolk/tomlrange/main)
+
 Parse and validate `{ from = …, to = … }` tables. Not a TOML parser —
 feed it the dicts `tomllib` already produced.
 
