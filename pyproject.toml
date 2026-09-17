@@ -49,6 +49,7 @@ explicit = true
 dev = [
     "pytest>=8.0",
     "ruff>=0.16.8",
+    "pre-commit>=4.0",
 ]
 
 [tool.pytest.ini_options]
