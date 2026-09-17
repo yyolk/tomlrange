@@ -76,15 +76,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "$(git ls-remote --tags origin \"refs/tags/v${NEW_VER}\")" ]; then
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v${NEW_VER}")" ]; then
             echo "Tag v${NEW_VER} already exists; never retag." >&2
             exit 1
           fi
 
-          open_prs="$(gh pr list --head \"bump/v${NEW_VER}\" --state open --json number --jq 'length')"
+          open_prs="$(gh pr list --head "bump/v${NEW_VER}" --state open --json number --jq 'length')"
           if [ "$open_prs" != "0" ]; then
             echo "An open PR already exists from bump/v${NEW_VER}." >&2
-            gh pr list --head \"bump/v${NEW_VER}\" --state open
+            gh pr list --head "bump/v${NEW_VER}" --state open
             exit 1
           fi
 
@@ -123,7 +123,7 @@ jobs:
 
           git push -u origin "HEAD:bump/v${NEW_VER}"
 
-          if [ -n "$(git ls-remote --tags origin \"refs/tags/v${OLD_VER}\")" ]; then
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v${OLD_VER}")" ]; then
             compare_base="v${OLD_VER}"
           else
             compare_base="main"
@@ -172,12 +172,12 @@ jobs:
             echo "Do not push tags by hand. Never retag."
           } > "$RUNNER_TEMP/pr-body.md"
 
-          PR_URL="$(gh pr create \\
-            --base main \\
-            --head \"bump/v${NEW_VER}\" \\
-            --title \"chore: bump version to ${NEW_VER}\" \\
-            --label \"$label\" \\
-            --body-file \"$RUNNER_TEMP/pr-body.md\")"
+          PR_URL="$(gh pr create \
+            --base main \
+            --head "bump/v${NEW_VER}" \
+            --title "chore: bump version to ${NEW_VER}" \
+            --label "$label" \
+            --body-file "$RUNNER_TEMP/pr-body.md")"
           echo "${PR_URL}"
           {
             echo
