@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from tomlrange.error import TomlRangeError
 from tomlrange.paths import Overlap
@@ -9,14 +7,12 @@ from tomlrange.paths import Overlap
 if TYPE_CHECKING:
     from tomlrange.bound import Bound, Bounds
 
-T = TypeVar("T")
-
 _FROM = "from"
 _TO = "to"
 
 
 @dataclass(frozen=True, slots=True)
-class Domain(Generic[T]):
+class Domain[T]:
     """Closed interval domain for a `{ from, to }` table.
 
     `typ` is matched with `type(raw) is typ` — `bool` is not an `int`,
@@ -68,7 +64,7 @@ class Domain(Generic[T]):
             )
         return raw
 
-    def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
+    def bound(self, raw: Any, *, path: str = ".") -> "Bound[T]":
         from tomlrange.bound import Bound
 
         return Bound.parse(raw, self, path=path)
@@ -79,12 +75,12 @@ class Domain(Generic[T]):
         *,
         path: str = ".",
         overlap: Overlap = "reject",
-    ) -> Bounds[T]:
+    ) -> "Bounds[T]":
         from tomlrange.bound import Bounds
 
         return Bounds.parse(raw, self, path=path, overlap=overlap)
 
-    def full(self) -> Bound[T]:
+    def full(self) -> "Bound[T]":
         from tomlrange.bound import Bound
 
         if self.lo is None or self.hi is None:
@@ -133,7 +129,7 @@ class Spec:
         )
 
     @classmethod
-    def parse(cls, raw: Any, *, path: str = ".") -> Bound[Any]:
+    def parse(cls, raw: Any, *, path: str = ".") -> "Bound[Any]":
         from tomlrange.bound import Bound
 
         return Bound.parse(raw, cls.domain, path=path)
@@ -145,7 +141,7 @@ class Spec:
         *,
         path: str = ".",
         overlap: Overlap | None = None,
-    ) -> Bounds[Any]:
+    ) -> "Bounds[Any]":
         from tomlrange.bound import Bounds
 
         return Bounds.parse(
@@ -156,5 +152,5 @@ class Spec:
         )
 
     @classmethod
-    def full(cls) -> Bound[Any]:
+    def full(cls) -> "Bound[Any]":
         return cls.domain.full()

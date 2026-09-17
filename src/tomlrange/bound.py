@@ -1,14 +1,10 @@
-from __future__ import annotations
-
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from tomlrange.domain import Domain
 from tomlrange.error import TomlRangeError
 from tomlrange.paths import Overlap, index_path, join_path
-
-T = TypeVar("T")
 
 
 def _as_table(raw: Any, *, path: str) -> Mapping[str, Any]:
@@ -18,7 +14,7 @@ def _as_table(raw: Any, *, path: str) -> Mapping[str, Any]:
 
 
 @dataclass(frozen=True, slots=True)
-class Bound(Generic[T]):
+class Bound[T]:
     """One inclusive interval parsed from a `{ from, to }` table."""
 
     start: T
@@ -94,7 +90,7 @@ class Bound(Generic[T]):
 
 
 @dataclass(frozen=True, slots=True)
-class Bounds(Generic[T]):
+class Bounds[T]:
     """One table or an array of `{ from, to }` tables."""
 
     spans: tuple[Bound[T], ...]
@@ -172,7 +168,7 @@ class Bounds(Generic[T]):
         return f"Bounds({inner}, {self.domain.name})"
 
 
-def _coalesce(spans: tuple[Bound[T], ...], domain: Domain[T]) -> tuple[Bound[T], ...]:
+def _coalesce[T](spans: tuple[Bound[T], ...], domain: Domain[T]) -> tuple[Bound[T], ...]:
     if not spans:
         return ()
     ordered = sorted(spans, key=lambda s: (s.start, s.stop))
