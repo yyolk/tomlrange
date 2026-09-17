@@ -65,7 +65,7 @@ class Domain[T]:
         return raw
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
-        from tomlrange.bound import Bound
+        from tomlrange.bound import Bound  # cycle: Domain ↔ Bound
 
         return Bound.parse(raw, self, path=path)
 
@@ -76,12 +76,12 @@ class Domain[T]:
         path: str = ".",
         overlap: Overlap = "reject",
     ) -> Bounds[T]:
-        from tomlrange.bound import Bounds
+        from tomlrange.bound import Bounds  # cycle: Domain ↔ Bound
 
         return Bounds.parse(raw, self, path=path, overlap=overlap)
 
     def full(self) -> Bound[T]:
-        from tomlrange.bound import Bound
+        from tomlrange.bound import Bound  # cycle: Domain ↔ Bound
 
         if self.lo is None or self.hi is None:
             raise TomlRangeError(".", f"{self.name} domain has no closed lo/hi")

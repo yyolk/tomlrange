@@ -10,10 +10,17 @@ if TYPE_CHECKING:
     from tomlrange.paths import Overlap
 
 
-def _as_table(raw: Any, *, path: str) -> Mapping[str, Any]:
+def _as_table(
+    raw: Any, *, path: str, keys: tuple[str, str]
+) -> Mapping[str, Any]:
     if isinstance(raw, Mapping):
         return raw
-    raise TomlRangeError(path, "expected a table { from = …, to = … }", raw)
+    start_key, stop_key = keys
+    raise TomlRangeError(
+        path,
+        f"expected a table {{ {start_key} = …, {stop_key} = … }}",
+        raw,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +33,8 @@ class Bound[T]:
 
     @classmethod
     def parse(cls, raw: Any, domain: Domain[T], *, path: str = ".") -> Bound[T]:
-        table = _as_table(raw, path=path)
         start_key, stop_key = domain.keys
+        table = _as_table(raw, path=path, keys=domain.keys)
         extra = set(table) - {start_key, stop_key}
         if extra:
             raise TomlRangeError(
@@ -51,16 +58,18 @@ class Bound[T]:
             )
         return cls(start, stop, domain)
 
-    @property
-    def width(self) -> int:
+    def _require_int(self) -> None:
         if type(self.start) is not int or type(self.stop) is not int:
             raise TypeError(f"{self.domain.name} width is only defined for int")
-        return self.stop - self.start + 1
+
+    @property
+    def width(self) -> int:
+        self._require_int()
+        return self.stop - self.start + 1  # type: ignore[operator]
 
     def as_range(self) -> range:
-        if type(self.start) is not int or type(self.stop) is not int:
-            raise TypeError(f"{self.domain.name} as_range() is only defined for int")
-        return range(self.start, self.stop + 1)
+        self._require_int()
+        return range(self.start, self.stop + 1)  # type: ignore[arg-type]
 
     def as_tuple(self) -> tuple[T, T]:
         return (self.start, self.stop)
@@ -75,9 +84,11 @@ class Bound[T]:
         return self.start <= item <= self.stop  # type: ignore[operator]
 
     def __iter__(self) -> Iterator[T]:
+        self._require_int()
         yield from self.as_range()  # type: ignore[misc]
 
     def __len__(self) -> int:
+        self._require_int()
         return self.width
 
     def overlaps(self, other: Bound[T]) -> bool:
@@ -148,6 +159,10 @@ class Bounds[T]:
     def merge(self) -> Bounds[T]:
         return Bounds(_coalesce(self.spans, self.domain), self.domain)
 
+    def _require_int(self) -> None:
+        if self.domain.typ is not int:
+            raise TypeError(f"{self.domain.name} width is only defined for int")
+
     def covers(self, item: object) -> bool:
         return any(item in span for span in self.spans)
 
@@ -155,6 +170,7 @@ class Bounds[T]:
         return self.covers(item)
 
     def __iter__(self) -> Iterator[T]:
+        self._require_int()
         seen: set[T] = set()
         for span in self.spans:
             for item in span:
@@ -164,6 +180,7 @@ class Bounds[T]:
                 yield item
 
     def __len__(self) -> int:
+        self._require_int()
         return sum(1 for _ in self)
 
     def __repr__(self) -> str:
