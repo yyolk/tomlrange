@@ -139,6 +139,8 @@ def test_int_only_iteration() -> None:
         len(bound)
     with pytest.raises(TypeError, match="label width is only defined for int"):
         _ = bound.width
+    with pytest.raises(TypeError, match="label width is only defined for int"):
+        bound.as_range()
     spans = labels.bounds([{"from": "a", "to": "b"}, {"from": "d", "to": "e"}])
     assert "a" in spans
     with pytest.raises(TypeError, match="label width is only defined for int"):
@@ -154,3 +156,80 @@ def test_error_paths() -> None:
             path="months_ranges",
         )
     assert exc.value.path == "months_ranges[1].to"
+
+
+def test_open_int_domain_parse() -> None:
+    open_int = Domain(int, name="n")
+    bound = open_int.bound({"from": -3, "to": 99})
+    assert bound.as_tuple() == (-3, 99)
+    assert -3 in bound
+    assert 99 in bound
+
+
+def test_full_requires_closed_lo_hi() -> None:
+    open_int = Domain(int, name="n")
+    with pytest.raises(TomlRangeError, match="n domain has no closed lo/hi"):
+        open_int.full()
+    half = Domain(int, lo=1, name="n")
+    with pytest.raises(TomlRangeError, match="n domain has no closed lo/hi"):
+        half.full()
+
+    class Open(Spec):
+        typ = int
+        name = "open"
+
+    with pytest.raises(TomlRangeError, match="open domain has no closed lo/hi"):
+        Open.full()
+
+
+def test_bounds_empty_list() -> None:
+    empty = MONTH.bounds([])
+    assert empty.spans == ()
+    assert list(empty) == []
+
+
+def test_unknown_overlap_policy() -> None:
+    with pytest.raises(ValueError, match="unknown overlap policy 'bogus'"):
+        MONTH.bounds([{"from": 1, "to": 2}], overlap="bogus")
+
+
+def test_float_domain_parse() -> None:
+    ratio = Domain(float, lo=0.0, hi=1.0, name="ratio")
+    bound = ratio.bound({"from": 0.25, "to": 0.75})
+    assert bound.as_tuple() == (0.25, 0.75)
+    assert 0.5 in bound
+    assert bound.as_table() == {"from": 0.25, "to": 0.75}
+
+
+def test_spec_name_suffix_stripping() -> None:
+    class MonthBounds(Spec):
+        typ = int
+        lo = 1
+        hi = 12
+
+    class MonthRange(Spec):
+        typ = int
+        lo = 1
+        hi = 12
+
+    class MonthSpec(Spec):
+        typ = int
+        lo = 1
+        hi = 12
+
+    assert MonthBounds.domain.name == "month"
+    assert MonthRange.domain.name == "month"
+    assert MonthSpec.domain.name == "month"
+
+
+def test_spec_overlap_class_default() -> None:
+    class AllowingMonth(Spec):
+        typ = int
+        lo = 1
+        hi = 12
+        overlap = "allow"
+
+    raw = [{"from": 1, "to": 4}, {"from": 4, "to": 6}]
+    allowed = AllowingMonth.parse_many(raw)
+    assert list(allowed) == [1, 2, 3, 4, 5, 6]
+    assert len(allowed.spans) == 2
