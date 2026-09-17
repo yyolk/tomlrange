@@ -130,7 +130,7 @@ class Spec:
 
     @classmethod
     def parse(cls, raw: Any, *, path: str = ".") -> Bound[Any]:
-        from tomlrange.bound import Bound
+        from tomlrange.bound import Bound  # cycle: Domain ↔ Bound
 
         return Bound.parse(raw, cls.domain, path=path)
 
@@ -142,7 +142,7 @@ class Spec:
         path: str = ".",
         overlap: Overlap | None = None,
     ) -> Bounds[Any]:
-        from tomlrange.bound import Bounds
+        from tomlrange.bound import Bounds  # cycle: Domain ↔ Bound
 
         return Bounds.parse(
             raw,
