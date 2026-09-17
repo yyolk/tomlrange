@@ -1,0 +1,185 @@
+name: Bump version
+run-name: Bump ${{ inputs.bump }} (${{ inputs.publish && 'publish' || 'draft' }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: uv version --bump (one per dispatch)
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - rc
+          - beta
+          - alpha
+          - stable
+          - post
+          - dev
+        default: patch
+      publish:
+        description: Published Release after merge (false = draft; tag is still created)
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump and open PR
+    runs-on: ubuntu-latest
+    env:
+      BUMP: ${{ inputs.bump }}
+      PUBLISH: ${{ inputs.publish }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - id: versions
+        name: Compute next version
+        run: |
+          set -euo pipefail
+
+          OLD_VER="$(uv version --short --no-sync)"
+          OLD_VER="${OLD_VER%%$'\n'}"
+          NEW_VER="$(uv version --dry-run --bump "$BUMP" --short --no-sync)"
+          NEW_VER="${NEW_VER%%$'\n'}"
+          if [ -z "$NEW_VER" ]; then
+            echo "uv version --dry-run did not print a version" >&2
+            exit 1
+          fi
+          echo "Next version: ${OLD_VER} → ${NEW_VER} (bump=${BUMP})"
+          {
+            echo "old=${OLD_VER}"
+            echo "new=${NEW_VER}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Bump ${{ steps.versions.outputs.old }} → ${{ steps.versions.outputs.new }}
+        env:
+          OLD_VER: ${{ steps.versions.outputs.old }}
+          NEW_VER: ${{ steps.versions.outputs.new }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$(git ls-remote --tags origin \"refs/tags/v${NEW_VER}\")" ]; then
+            echo "Tag v${NEW_VER} already exists; never retag." >&2
+            exit 1
+          fi
+
+          open_prs="$(gh pr list --head \"bump/v${NEW_VER}\" --state open --json number --jq 'length')"
+          if [ "$open_prs" != "0" ]; then
+            echo "An open PR already exists from bump/v${NEW_VER}." >&2
+            gh pr list --head \"bump/v${NEW_VER}\" --state open
+            exit 1
+          fi
+
+          uv version --bump "$BUMP" --no-sync
+          actual="$(uv version --short --no-sync)"
+          if [ "$actual" != "$NEW_VER" ]; then
+            echo "uv version wrote ${actual}, expected ${NEW_VER}" >&2
+            exit 1
+          fi
+
+          python3 -c '
+          import os, pathlib, re, sys
+          path = pathlib.Path("src/tomlrange/__init__.py")
+          text = path.read_text()
+          ver = os.environ["NEW_VER"]
+          new, n = re.subn(r"__version__ = \"[^\"]+\"", f"__version__ = \"{ver}\"", text, count=1)
+          if n != 1:
+              sys.exit("did not replace src/tomlrange/__init__.py __version__")
+          path.write_text(new)
+          '
+
+          git checkout -b "bump/v${NEW_VER}"
+
+          git add pyproject.toml src/tomlrange/__init__.py
+          if ! git diff --quiet -- uv.lock; then
+            git add uv.lock
+          fi
+          if git diff --cached --quiet; then
+            echo "uv version did not change pyproject.toml, __init__.py, or uv.lock" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: bump version to ${NEW_VER}." -m "Co-authored-by: Joseph Chiocchi <joe@yolk.cc>"
+
+          git push -u origin "HEAD:bump/v${NEW_VER}"
+
+          if [ -n "$(git ls-remote --tags origin \"refs/tags/v${OLD_VER}\")" ]; then
+            compare_base="v${OLD_VER}"
+          else
+            compare_base="main"
+          fi
+          OLD_TREE_URL="https://github.com/${GH_REPO}/tree/${compare_base}"
+          NEW_TREE_URL="https://github.com/${GH_REPO}/tree/bump/v${NEW_VER}"
+          COMPARE_URL="https://github.com/${GH_REPO}/compare/${compare_base}...bump/v${NEW_VER}"
+          echo "${OLD_TREE_URL}"
+          echo "${NEW_TREE_URL}"
+          echo "${COMPARE_URL}"
+          {
+            echo "Bump [${OLD_VER}](${OLD_TREE_URL}) → [${NEW_VER}](${NEW_TREE_URL})"
+            echo
+            echo "Compare: ${COMPARE_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$PUBLISH" = "true" ]; then
+            mode_comment="<!-- tomlrange-release: publish -->"
+            label="release:publish"
+            mode_word="published"
+          else
+            mode_comment="<!-- tomlrange-release: draft -->"
+            label="release:draft"
+            mode_word="draft"
+          fi
+
+          ensure_label() {
+            local name="$1" color="$2" desc="$3"
+            if gh label list --limit 100 --json name --jq '.[].name' | grep -Fxq "$name"; then
+              return 0
+            fi
+            gh label create "$name" --color "$color" --description "$desc"
+          }
+          ensure_label "release:publish" "0e8a16" "Cut a published GitHub Release when this bump PR merges"
+          ensure_label "release:draft" "fbca04" "Cut a draft GitHub Release when this bump PR merges"
+
+          {
+            echo "Bumps \`[project].version\` with \`uv version --bump ${BUMP}\` to **${NEW_VER}**."
+            echo
+            echo "${mode_comment}"
+            echo
+            echo "Merging this PR triggers **Cut release**, which creates GitHub Release \`v${NEW_VER}\` immediately (${mode_word})."
+            echo
+            echo "A published Release then runs **Publish** (TestPyPI; PyPI only when the version is not a pre-release). A draft does not, until someone publishes it in the UI."
+            echo
+            echo "Do not push tags by hand. Never retag."
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          PR_URL="$(gh pr create \\
+            --base main \\
+            --head \"bump/v${NEW_VER}\" \\
+            --title \"chore: bump version to ${NEW_VER}\" \\
+            --label \"$label\" \\
+            --body-file \"$RUNNER_TEMP/pr-body.md\")"
+          echo "${PR_URL}"
+          {
+            echo
+            echo "PR: [#${PR_URL##*/}](${PR_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"

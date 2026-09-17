@@ -1,0 +1,115 @@
+name: Cut release
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  cut:
+    name: Create GitHub Release
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      startsWith(github.event.pull_request.head.ref, 'bump/v')
+    runs-on: ubuntu-latest
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Create GitHub Release
+        run: |
+          set -euo pipefail
+
+          PR_BODY="$(gh pr view \"$PR_NUMBER\" --json body --jq .body)"
+          VER="$(python3 -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path(\"pyproject.toml\").read_text())[\"project\"][\"version\"])')"
+          expected="${HEAD_REF#bump/v}"
+          if [ \"$VER\" != \"$expected\" ]; then
+            echo \"pyproject version ${VER} does not match branch ${HEAD_REF} (expected ${expected}).\" >&2
+            exit 1
+          fi
+
+          IS_PRERELEASE="$(VER=\"$VER\" uv run --with packaging --no-project python -c 'import os; from packaging.version import Version; print(Version(os.environ[\"VER\"]).is_prerelease)')"
+          pre_args=()
+          if [ \"$IS_PRERELEASE\" = \"True\" ]; then
+            pre_args+=(--prerelease)
+          fi
+
+          has_pub_label=0
+          has_draft_label=0
+          case \",${PR_LABELS},\" in
+            *\",release:publish,\"*) has_pub_label=1 ;;
+          esac
+          case \",${PR_LABELS},\" in
+            *\",release:draft,\"*) has_draft_label=1 ;;
+          esac
+
+          mode=\"\"
+          if [ \"$has_pub_label\" -eq 1 ] && [ \"$has_draft_label\" -eq 1 ]; then
+            echo \"PR has both release:publish and release:draft; pick one.\" >&2
+            exit 1
+          elif [ \"$has_pub_label\" -eq 1 ]; then
+            mode=publish
+          elif [ \"$has_draft_label\" -eq 1 ]; then
+            mode=draft
+          elif printf '%s\\n' \"$PR_BODY\" | grep -Fq '<!-- tomlrange-release: publish -->'; then
+            if printf '%s\\n' \"$PR_BODY\" | grep -Fq '<!-- tomlrange-release: draft -->'; then
+              echo \"PR body has both tomlrange-release comments; pick one.\" >&2
+              exit 1
+            fi
+            mode=publish
+          elif printf '%s\\n' \"$PR_BODY\" | grep -Fq '<!-- tomlrange-release: draft -->'; then
+            mode=draft
+          else
+            echo \"Cannot determine release mode: need label release:publish or release:draft, or HTML comment <!-- tomlrange-release: publish --> / <!-- tomlrange-release: draft -->.\" >&2
+            exit 1
+          fi
+
+          if [ -n \"$(git ls-remote --tags origin \"refs/tags/v${VER}\")\" ]; then
+            echo \"Tag v${VER} already exists; never retag.\" >&2
+            exit 1
+          fi
+
+          echo \"Cutting v${VER} as ${mode} at ${MERGE_SHA} (is_prerelease=${IS_PRERELEASE})\"
+          if [ \"$mode\" = draft ]; then
+            gh release create \"v${VER}\" \\
+              --draft \\
+              \"${pre_args[@]}\" \\
+              --generate-notes \\
+              --title \"v${VER}\" \\
+              --target \"$MERGE_SHA\"
+            echo \"Draft: not dispatching Publish (UI publish still fires on: release).\"
+          else
+            gh release create \"v${VER}\" \\
+              \"${pre_args[@]}\" \\
+              --generate-notes \\
+              --title \"v${VER}\" \\
+              --target \"$MERGE_SHA\"
+
+            # GITHUB_TOKEN creates do not fire on: release; workflow_dispatch does cascade.
+            if [ \"$IS_PRERELEASE\" = \"True\" ]; then
+              echo \"Dispatching Publish (testpypi only) for pre-release v${VER}\"
+              gh workflow run publish.yml --ref \"v${VER}\" -f target=testpypi -f release_tag=\"v${VER}\"
+              echo \"Dispatched workflow runs (listing may be racy):\"
+              gh run list --workflow=publish.yml --event=workflow_dispatch --limit 2 || true
+            else
+              echo \"Dispatching Publish (testpypi + pypi) for v${VER}\"
+              gh workflow run publish.yml --ref \"v${VER}\" -f target=testpypi -f release_tag=\"v${VER}\"
+              gh workflow run publish.yml --ref \"v${VER}\" -f target=pypi -f release_tag=\"v${VER}\"
+              echo \"Dispatched workflow runs (listing may be racy):\"
+              gh run list --workflow=publish.yml --event=workflow_dispatch --limit 4 || true
+            fi
+          fi
