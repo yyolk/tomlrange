@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from typing import Literal
 
-Overlap = Literal["reject", "allow", "merge"]
+type Overlap = Literal["reject", "allow", "merge"]
 
 
 def join_path(parent: str, child: str) -> str:

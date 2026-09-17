@@ -107,4 +107,4 @@ months_ranges[1].to: 13 is above month 12
 pip install tomlrange
 ```
 
-Python 3.12+.
+Python 3.14+.
