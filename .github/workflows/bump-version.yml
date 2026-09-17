@@ -161,7 +161,12 @@ jobs:
             echo "Do not push tags by hand. Never retag."
           } > "$RUNNER_TEMP/pr-body.md"
 
-          PR_URL="$(gh pr create \\\n            --base main \\\n            --head \"bump/v${NEW_VER}\" \\\n            --title \"chore: bump version to ${NEW_VER}\" \\\n            --label \"$label\" \\\n            --body-file \"$RUNNER_TEMP/pr-body.md\")"
+          PR_URL="$(gh pr create \
+            --base main \
+            --head "bump/v${NEW_VER}" \
+            --title "chore: bump version to ${NEW_VER}" \
+            --label "$label" \
+            --body-file "$RUNNER_TEMP/pr-body.md")"
           echo "${PR_URL}"
           {
             echo
