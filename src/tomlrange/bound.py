@@ -10,9 +10,7 @@ if TYPE_CHECKING:
     from tomlrange.paths import Overlap
 
 
-def _as_table(
-    raw: Any, *, path: str, keys: tuple[str, str]
-) -> Mapping[str, Any]:
+def _as_table(raw: Any, *, path: str, keys: tuple[str, str]) -> Mapping[str, Any]:
     if isinstance(raw, Mapping):
         return raw
     start_key, stop_key = keys
