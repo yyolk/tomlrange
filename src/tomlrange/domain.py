@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from tomlrange.error import TomlRangeError
-from tomlrange.paths import Overlap
 
 if TYPE_CHECKING:
     from tomlrange.bound import Bound, Bounds
+    from tomlrange.paths import Overlap
 
 _FROM = "from"
 _TO = "to"

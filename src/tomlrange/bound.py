@@ -1,10 +1,13 @@
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tomlrange.domain import Domain
 from tomlrange.error import TomlRangeError
-from tomlrange.paths import Overlap, index_path, join_path
+from tomlrange.paths import index_path, join_path
+
+if TYPE_CHECKING:
+    from tomlrange.paths import Overlap
 
 
 def _as_table(raw: Any, *, path: str) -> Mapping[str, Any]:
@@ -168,7 +171,9 @@ class Bounds[T]:
         return f"Bounds({inner}, {self.domain.name})"
 
 
-def _coalesce[T](spans: tuple[Bound[T], ...], domain: Domain[T]) -> tuple[Bound[T], ...]:
+def _coalesce[T](
+    spans: tuple[Bound[T], ...], domain: Domain[T]
+) -> tuple[Bound[T], ...]:
     if not spans:
         return ()
     ordered = sorted(spans, key=lambda s: (s.start, s.stop))
