@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
-from tomlrange.clock import seconds_since_midnight
+from tomlrange.clock import parse_clock_label, seconds_since_midnight
 from tomlrange.error import TomlRangeError
 
 if TYPE_CHECKING:
@@ -147,6 +147,8 @@ class Domain[T]:
                     raw,
                 )
             value = raw
+        elif type(raw) is str:
+            value = parse_clock_label(raw, path=path, name=self.name)
         else:
             raise TomlRangeError(
                 path,
