@@ -82,7 +82,9 @@ class Domain[T]:
             if type(self.step) is not timedelta:
                 raise TypeError("step must be timedelta")
             if self.step <= timedelta(0) or self.step >= timedelta(days=1):
-                raise ValueError("step must be a positive interval shorter than one day")
+                raise ValueError(
+                    "step must be a positive interval shorter than one day"
+                )
 
     @property
     def start_key(self) -> str:
