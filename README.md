@@ -83,16 +83,18 @@ Month.parse_many([{"from": 1, "to": 4}, {"from": 6, "to": 10}])
 
 Named discrete order is `members`. `wrap=True` is a cyclic topology — `from`
 after `to` walks across the seam. `from == to` stays a singleton; the full
-cycle is `full()`.
+cycle is `full()`. `aliases` canonicalize extra spellings (any key type)
+onto a member.
+
+The built-in `Weekday` is that schema: `mon`…`sun`, `wrap=True`, plus long
+names, two-letter shorts, and ISO weekday numbers 1–7.
 
 ```python
-class Weekday(Spec):
-    typ = str
-    members = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-    wrap = True
-
+from tomlrange import Weekday
 
 list(Weekday.parse({"from": "sat", "to": "mon"}))  # sat, sun, mon
+list(Weekday.parse({"from": "friday", "to": "sat"}))  # fri, sat
+list(Weekday.parse({"from": 1, "to": 3}))  # mon, tue, wed
 ```
 
 ## Validation
@@ -103,7 +105,8 @@ On one table:
 - keys are exactly `from` and `to` (override with `Domain(..., keys=("start", "end"))`)
 - each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`)
 - endpoints sit inside `lo` / `hi` when those are set
-- when `members` is set, each endpoint is an exact member (unknown → error at `from` / `to`)
+- when `members` is set, each endpoint is a member or an `aliases` spelling
+  (unknown → error at `from` / `to`)
 - `from <= to` in domain order (a singleton is `{ from = 3, to = 3 }`); with
   `wrap=True`, `from` after `to` is a seam walk, not an error
 

@@ -112,6 +112,26 @@ def test_spec_members_and_wrap() -> None:
     assert Weekday.full().width == 7
 
 
+def test_aliases_canonicalize_before_members() -> None:
+    days = Domain(
+        str,
+        members=("mon", "tue", "wed"),
+        aliases={"monday": "mon", 1: "mon", "mo": "mon"},
+        name="weekday",
+    )
+    assert days.bound({"from": "monday", "to": "wed"}).as_tuple() == ("mon", "wed")
+    assert days.bound({"from": "Monday", "to": "tue"}).as_tuple() == ("mon", "tue")
+    assert days.bound({"from": 1, "to": "tue"}).as_tuple() == ("mon", "tue")
+    assert days.bound({"from": "MO", "to": "tue"}).as_tuple() == ("mon", "tue")
+
+
+def test_aliases_constructor_guards() -> None:
+    with pytest.raises(TypeError, match="alias targets must be str"):
+        Domain(str, members=("mon",), aliases={1: 1}, name="weekday")
+    with pytest.raises(ValueError, match="alias target must be a member"):
+        Domain(str, members=("mon",), aliases={"monday": "tue"}, name="weekday")
+
+
 def test_members_constructor_guards() -> None:
     with pytest.raises(ValueError, match="members must be non-empty"):
         Domain(str, members=(), name="color")
