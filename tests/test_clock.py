@@ -1,7 +1,7 @@
-from datetime import date, datetime, time, timedelta, timezone
+import tomllib
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-import tomllib
 
 from tomlrange import Bound, Clock, Domain, Spec, TomlRangeError
 
@@ -60,7 +60,9 @@ def test_singleton_is_not_full_day() -> None:
 
 
 def test_inverted_overnight_without_wrap() -> None:
-    with pytest.raises(TomlRangeError, match="from \\(22:00:00\\) is after to \\(02:00:00\\)"):
+    with pytest.raises(
+        TomlRangeError, match="from \\(22:00:00\\) is after to \\(02:00:00\\)"
+    ):
         Clock.parse({"from": time(22, 0), "to": time(2, 0)})
     with pytest.raises(TomlRangeError, match="is after"):
         Clock.parse({"from": "10 PM", "to": "2 AM"})
@@ -114,7 +116,7 @@ def test_reject_bad_labels_and_wrong_types() -> None:
     with pytest.raises(TomlRangeError, match="expected time, got date"):
         Clock.parse({"from": date(2026, 1, 1), "to": time(17, 0)})
     with pytest.raises(TomlRangeError, match="aware time is not a local time"):
-        Clock.parse({"from": time(9, 0, tzinfo=timezone.utc), "to": time(17, 0)})
+        Clock.parse({"from": time(9, 0, tzinfo=UTC), "to": time(17, 0)})
 
 
 def test_merge_adjacent_hour_blocks() -> None:

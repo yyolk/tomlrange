@@ -35,4 +35,3 @@ def parse_clock_label(raw: str, *, path: str, name: str) -> time:
 def seconds_since_midnight(value: time) -> int:
     """Position on the 24h line. Not elapsed length."""
     return value.hour * 3600 + value.minute * 60 + value.second
-
