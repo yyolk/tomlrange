@@ -97,6 +97,18 @@ list(Weekday.parse({"from": "friday", "to": "sat"}))  # fri, sat
 list(Weekday.parse({"from": 1, "to": 3}))  # mon, tue, wed
 ```
 
+Built-in `Color` is the linear Roy G. Biv rainbow (`wrap=False`). Letter
+and full-name aliases (`r`, `o`, `y`, `g`, `b`, `i`, `v` plus names) use
+the same `aliases=` field as `Weekday`. Inverted tables error the same
+way inverted ints do.
+
+```python
+from tomlrange import Color
+
+list(Color.parse({"from": "red", "to": "violet"}))
+list(Color.parse({"from": "o", "to": "g"}))  # orange, yellow, green
+```
+
 ## Validation
 
 On one table:
