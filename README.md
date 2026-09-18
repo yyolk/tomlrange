@@ -100,14 +100,21 @@ Time-of-day is clock *position* on the 24h line, not duration. Unquoted
 
 ```python
 import tomllib
-from tomlrange import Clock
+from datetime import time, timedelta
+
+from tomlrange import Clock, elapsed
 
 hours = Clock.parse(tomllib.loads("open = { from = 09:00:00, to = 17:00:00 }")["open"])
 assert hours.as_tuple()[0].hour == 9
+assert type(hours.start) is time
+assert type(hours.stop) is time
+assert elapsed(hours) == timedelta(hours=8)
 ```
 
-`wrap=True` allows overnight `{ from = 22:00:00, to = 02:00:00 }`. A singleton
-is one tick, not a full day.
+`elapsed` is derived walk length (`(width - 1) * step`) — endpoints stay
+`time`. `wrap=True` allows overnight `{ from = 22:00:00, to = 02:00:00 }`
+(`elapsed` is then the wrap walk, 4 hours). A singleton is one tick, not
+a full day.
 
 ## Validation
 
