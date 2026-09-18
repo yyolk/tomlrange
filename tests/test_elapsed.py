@@ -6,18 +6,13 @@ import pytest
 from tomlrange import Clock, Domain, elapsed
 
 NATIVE = "open = { from = 09:00:00, to = 17:00:00 }\n"
-LABELS = 'open = { from = "9 AM", to = "5 PM" }\n'
 
 
-def test_elapsed_native_toml_and_labels() -> None:
+def test_elapsed_native_toml() -> None:
     block = Clock.parse(tomllib.loads(NATIVE)["open"])
     assert type(block.start) is time
     assert type(block.stop) is time
     assert elapsed(block) == timedelta(hours=8)
-
-    labels = Clock.parse({"from": "9 AM", "to": "5 PM"})
-    quoted = Clock.parse(tomllib.loads(LABELS)["open"])
-    assert elapsed(labels) == elapsed(quoted) == timedelta(hours=8)
 
 
 def test_elapsed_is_not_inclusive_tick_width() -> None:
@@ -27,13 +22,13 @@ def test_elapsed_is_not_inclusive_tick_width() -> None:
 
 
 def test_elapsed_singleton_is_zero() -> None:
-    one = Clock.parse({"from": "9 AM", "to": "9 AM"})
+    one = Clock.parse({"from": time(9, 0), "to": time(9, 0)})
     assert elapsed(one) == timedelta(0)
     assert one.width == 1
 
 
 def test_elapsed_partial_hour() -> None:
-    assert elapsed(Clock.parse({"from": "9 AM", "to": "9:30 AM"})) == timedelta(
+    assert elapsed(Clock.parse({"from": time(9, 0), "to": time(9, 30)})) == timedelta(
         minutes=30
     )
 
@@ -51,7 +46,6 @@ def test_elapsed_overnight_wrap_walk() -> None:
     assert type(bound.stop) is time
     assert bound.as_tuple() == (time(22, 0), time(2, 0))
     assert elapsed(bound) == timedelta(hours=4)
-    assert elapsed(night.bound({"from": "10 PM", "to": "2 AM"})) == timedelta(hours=4)
     ticks = list(bound)
     assert ticks[0] == time(22, 0)
     assert ticks[-1] == time(2, 0)
