@@ -52,7 +52,9 @@ class Bound[T]:
             )
         start = domain.convert(table[start_key], path=join_path(path, start_key))
         stop = domain.convert(table[stop_key], path=join_path(path, stop_key))
-        if _inverted(domain, start, stop) and not _hook(domain, "wrap"):
+        if _inverted(domain, start, stop) and not (
+            _hook(domain, "wrap") and _hook(domain, "members") is not None
+        ):
             raise TomlRangeError(
                 path,
                 f"{start_key} ({start}) is after {stop_key} ({stop})",
@@ -101,8 +103,6 @@ class Bound[T]:
             if _hook(self.domain, "wrap"):
                 return k >= i or k <= j
             return False
-        if _hook(self.domain, "wrap") and _inverted(self.domain, self.start, self.stop):
-            return self.start <= item or item <= self.stop  # type: ignore[operator]
         return self.start <= item <= self.stop  # type: ignore[operator]
 
     def __iter__(self) -> Iterator[T]:
@@ -121,16 +121,6 @@ class Bound[T]:
         if _hook(self.domain, "members") is not None and callable(walk):
             return bool(
                 set(walk(self.start, self.stop)) & set(walk(other.start, other.stop))
-            )
-        if _hook(self.domain, "wrap") and (
-            _inverted(self.domain, self.start, self.stop)
-            or _inverted(self.domain, other.start, other.stop)
-        ):
-            return (
-                other.start in self
-                or other.stop in self
-                or self.start in other
-                or self.stop in other
             )
         return self.start <= other.stop and other.start <= self.stop  # type: ignore[operator]
 

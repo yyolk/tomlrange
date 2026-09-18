@@ -141,13 +141,6 @@ class Domain[T]:
                 return self.members[0]
             return None
         if type(member) is int:
-            if (
-                self.wrap
-                and self.hi is not None
-                and self.lo is not None
-                and member == self.hi
-            ):
-                return self.lo
             return member + 1  # type: ignore[return-value]
         return None
 
@@ -164,14 +157,8 @@ class Domain[T]:
                 return
             raise TypeError(f"{self.name} width is only defined for int")
         if type(start) is int and type(stop) is int:
-            if start <= stop:
-                yield from range(start, stop + 1)
-                return
-            if self.wrap and self.lo is not None and self.hi is not None:
-                yield from range(start, self.hi + 1)
-                yield from range(self.lo, stop + 1)
-                return
-            raise TypeError(f"{self.name} width is only defined for int")
+            yield from range(start, stop + 1)
+            return
         raise TypeError(f"{self.name} width is only defined for int")
 
     def width(self, start: T, stop: T) -> int:
@@ -184,11 +171,7 @@ class Domain[T]:
                 return len(self.members) - i + j + 1
             raise TypeError(f"{self.name} width is only defined for int")
         if type(start) is int and type(stop) is int:
-            if start <= stop:
-                return stop - start + 1
-            if self.wrap and self.lo is not None and self.hi is not None:
-                return (self.hi - start + 1) + (stop - self.lo + 1)
-            raise TypeError(f"{self.name} width is only defined for int")
+            return stop - start + 1
         raise TypeError(f"{self.name} width is only defined for int")
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
