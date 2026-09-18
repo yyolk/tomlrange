@@ -73,7 +73,7 @@ def test_rejects_wrong_shape_and_unknown_keys() -> None:
     with pytest.raises(TomlRangeError, match="expected a table"):
         MONTH.bound([1, 12])
     with pytest.raises(TomlRangeError, match="unknown keys"):
-        MONTH.bound({"from": 1, "to": 2, "step": 1})
+        MONTH.bound({"from": 1, "to": 2, "wrap": True})
     with pytest.raises(TomlRangeError, match="must have keys"):
         MONTH.bound({"from": 1})
     with pytest.raises(TomlRangeError, match="expected int, got float"):

@@ -183,7 +183,8 @@ class Domain[T]:
                 member,
             ) from None
 
-    def successor(self, member: T) -> T | None:
+    def successor(self, member: T, step: Any = None) -> T | None:
+        tick = self.step if step is None else step
         if self.members is not None:
             nxt = self.index(member) + 1
             if nxt < len(self.members):
@@ -192,15 +193,16 @@ class Domain[T]:
                 return self.members[0]
             return None
         if self.typ is time and self.members is None and type(member) is time:
-            nxt = datetime.combine(date.min, member) + self.step
+            nxt = datetime.combine(date.min, member) + tick
             if nxt.date() != date.min:
                 return nxt.time() if self.wrap else None  # type: ignore[return-value]
             return nxt.time()  # type: ignore[return-value]
         if type(member) is int:
-            return member + 1  # type: ignore[return-value]
+            stride = tick if type(tick) is int else 1
+            return member + stride  # type: ignore[return-value]
         return None
 
-    def walk(self, start: T, stop: T) -> Iterator[T]:
+    def walk(self, start: T, stop: T, step: Any = None) -> Iterator[T]:
         if self.members is not None:
             i = self.index(start)
             j = self.index(stop)
@@ -213,14 +215,16 @@ class Domain[T]:
                 return
             raise TypeError(f"{self.name} width is only defined for int")
         if self.typ is time and type(start) is time and type(stop) is time:
-            yield from self._walk_clock(start, stop)  # type: ignore[misc]
+            yield from self._walk_clock(start, stop, step=step)  # type: ignore[misc]
             return
         if type(start) is int and type(stop) is int:
-            yield from range(start, stop + 1)
+            stride = step if type(step) is int else 1
+            yield from range(start, stop + 1, stride)
             return
         raise TypeError(f"{self.name} width is only defined for int")
 
-    def _walk_clock(self, start: time, stop: time) -> Iterator[time]:
+    def _walk_clock(self, start: time, stop: time, step: Any = None) -> Iterator[time]:
+        tick = self.step if step is None else step
         wrapping = self.index(start) > self.index(stop)  # type: ignore[arg-type]
         if wrapping and not self.wrap:
             raise TypeError(f"{self.name} width is only defined for int")
@@ -228,10 +232,10 @@ class Domain[T]:
         crossed = False
         while True:
             yield cur
-            nxt = self.successor(cur)  # type: ignore[arg-type]
+            nxt = self.successor(cur, step=tick)  # type: ignore[arg-type]
             if nxt is None:
                 return
-            nxt_dt = datetime.combine(date.min, cur) + self.step
+            nxt_dt = datetime.combine(date.min, cur) + tick
             if nxt_dt.date() != date.min:
                 crossed = True
                 if not wrapping:
@@ -243,7 +247,7 @@ class Domain[T]:
                 return
             cur = nxt  # type: ignore[assignment]
 
-    def width(self, start: T, stop: T) -> int:
+    def width(self, start: T, stop: T, step: Any = None) -> int:
         if self.members is not None:
             i = self.index(start)
             j = self.index(stop)
@@ -253,9 +257,10 @@ class Domain[T]:
                 return len(self.members) - i + j + 1
             raise TypeError(f"{self.name} width is only defined for int")
         if self.typ is time and type(start) is time and type(stop) is time:
-            return sum(1 for _ in self._walk_clock(start, stop))
+            return sum(1 for _ in self._walk_clock(start, stop, step=step))
         if type(start) is int and type(stop) is int:
-            return stop - start + 1
+            stride = step if type(step) is int else 1
+            return (stop - start) // stride + 1
         raise TypeError(f"{self.name} width is only defined for int")
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
