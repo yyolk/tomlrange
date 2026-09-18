@@ -95,13 +95,31 @@ class Weekday(Spec):
 list(Weekday.parse({"from": "sat", "to": "mon"}))  # sat, sun, mon
 ```
 
+Time-of-day is clock *position* on the 24h line, not duration. Unquoted
+`09:00:00` is TOML local time; `"9 AM"` is tomlrange convert.
+
+```python
+import tomllib
+from tomlrange import Clock
+
+hours = Clock.parse(tomllib.loads("open = { from = 09:00:00, to = 17:00:00 }")["open"])
+also = Clock.parse({"from": "9 AM", "to": "5 PM"})
+assert hours.as_tuple() == also.as_tuple()
+```
+
+`wrap=True` allows overnight `{ from = "10 PM", to = "2 AM" }`. A singleton
+is one tick, not a full day.
+
 ## Validation
 
 On one table:
 
 - value is a mapping
 - keys are exactly `from` and `to` (override with `Domain(..., keys=("start", "end"))`)
-- each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`)
+- each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`).
+  A time domain also accepts `"h AM|PM"` / `"h:mm AM|PM"` labels (`"12 AM"` is
+  midnight, `"12 PM"` is noon). Glued `9am`, `13 PM`, aware times, dates,
+  datetimes, and timedeltas are rejected
 - endpoints sit inside `lo` / `hi` when those are set
 - when `members` is set, each endpoint is an exact member (unknown → error at `from` / `to`)
 - `from <= to` in domain order (a singleton is `{ from = 3, to = 3 }`); with
@@ -112,10 +130,10 @@ Reject treats a shared endpoint as overlap (`1–4` and `4–6` fail).
 Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
 Member domains overlap and merge on member identity, not string order.
 
-`list()`, `len()`, and `width` work for `int` and for `members`. `as_range()`
-is int-only. Other ordered `typ`s raise `TypeError`
-(`"{name} width is only defined for int"`). Membership, `as_tuple()`, and
-`as_table()` work for any ordered `typ`.
+`list()`, `len()`, and `width` work for `int`, `members`, and `datetime.time`
+(at `Domain.step`, default one minute). `as_range()` is int-only. Other
+ordered `typ`s raise `TypeError` (`"{name} width is only defined for int"`).
+Membership, `as_tuple()`, and `as_table()` work for any ordered `typ`.
 
 Errors carry a path:
 
@@ -126,12 +144,14 @@ months_ranges[1].to: 13 is above month 12
 ## What this is not
 
 - Not a file loader. Call `tomllib` yourself.
-- Not string ranges (`"1-12"`, `"Jan–Apr"`).
+- Not string ranges (`"1-12"`, `"Jan–Apr"`, `"9AM-5PM"`). Clock labels are one
+  endpoint (`"9 AM"`), not a range string.
 - Not a two-element array (`[1, 12]`). After TOML decode that is a list, not a table.
 - Not wrap-around unless the domain sets `wrap=True`.
-- Not `step`. A range table is a closed interval.
+- Not a TOML `step` key. A range table is a closed interval. Clock grain is a
+  domain fact (`step=timedelta(minutes=1)`).
 - Not a free-for-all `str` domain. Names need `members`.
-- Not iteration over a non-int domain without `members`. Walk dates yourself.
+- Not iteration over other ordered `typ`s (walk dates yourself). Time walks at `step`.
 
 ## Install
 
