@@ -7,7 +7,10 @@ length.
 
 from __future__ import annotations
 
-from datetime import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import time
 
 
 def seconds_since_midnight(value: time) -> int:
