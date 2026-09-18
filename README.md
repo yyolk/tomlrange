@@ -110,6 +110,34 @@ assert hours.as_tuple() == also.as_tuple()
 `wrap=True` allows overnight `{ from = "10 PM", to = "2 AM" }`. A singleton
 is one tick, not a full day.
 
+Elapsed time is `timedelta`. TOML has no duration type, so a duration
+domain may read local time as **length since midnight**, not a clock
+position (`00:15:00` is fifteen minutes elapsed). Overnight wrap is a
+different domain. Integer seconds (`>= 0`) are also accepted.
+
+```python
+import tomllib
+from datetime import timedelta
+from tomlrange import Domain, Duration
+
+data = tomllib.loads("nap = { from = 00:15:00, to = 00:45:00 }")
+nap = Duration.parse(data["nap"])
+assert nap.start == timedelta(minutes=15)
+
+Minutes = Domain(
+    timedelta,
+    lo=timedelta(0),
+    name="duration",
+    step=timedelta(minutes=1),
+)
+block = Minutes.bound({"from": 60, "to": 180})
+assert list(block) == [
+    timedelta(minutes=1),
+    timedelta(minutes=2),
+    timedelta(minutes=3),
+]
+```
+
 ## Validation
 
 On one table:
@@ -119,7 +147,10 @@ On one table:
 - each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`).
   A time domain also accepts `"h AM|PM"` / `"h:mm AM|PM"` labels (`"12 AM"` is
   midnight, `"12 PM"` is noon). Glued `9am`, `13 PM`, aware times, dates,
-  datetimes, and timedeltas are rejected
+  datetimes, and timedeltas are rejected. A `timedelta` domain is a
+  separate convert: naive local time as since-midnight *length* and
+  non-negative `int` seconds — not clock position, and not ISO duration
+  strings
 - endpoints sit inside `lo` / `hi` when those are set
 - when `members` is set, each endpoint is an exact member (unknown → error at `from` / `to`)
 - `from <= to` in domain order (a singleton is `{ from = 3, to = 3 }`); with
@@ -130,10 +161,12 @@ Reject treats a shared endpoint as overlap (`1–4` and `4–6` fail).
 Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
 Member domains overlap and merge on member identity, not string order.
 
-`list()`, `len()`, and `width` work for `int`, `members`, and `datetime.time`
-(at `Domain.step`, default one minute). `as_range()` is int-only. Other
-ordered `typ`s raise `TypeError` (`"{name} width is only defined for int"`).
-Membership, `as_tuple()`, and `as_table()` work for any ordered `typ`.
+`list()`, `len()`, and `width` work for `int`, `members`, `datetime.time`
+(at `Domain.step`, default one minute), and `timedelta` (default 1s).
+`as_range()` is int-only. Other ordered `typ`s raise `TypeError`
+(`"{name} width is only defined for int"`). Membership, `as_tuple()`, and
+`as_table()` work for any ordered `typ`. Iteration is discrete ticks, not
+every instant — use a minute `step` for longer duration spans.
 
 Errors carry a path:
 
@@ -147,11 +180,12 @@ months_ranges[1].to: 13 is above month 12
 - Not string ranges (`"1-12"`, `"Jan–Apr"`, `"9AM-5PM"`). Clock labels are one
   endpoint (`"9 AM"`), not a range string.
 - Not a two-element array (`[1, 12]`). After TOML decode that is a list, not a table.
-- Not wrap-around unless the domain sets `wrap=True`.
-- Not a TOML `step` key. A range table is a closed interval. Clock grain is a
-  domain fact (`step=timedelta(minutes=1)`).
+- Not wrap-around unless the domain sets `wrap=True`. A duration never wraps.
+- Not a TOML `step` key. A range table is a closed interval. Tick size is a
+  domain fact (`step`; clock default one minute, duration default 1s).
 - Not a free-for-all `str` domain. Names need `members`.
-- Not iteration over other ordered `typ`s (walk dates yourself). Time walks at `step`.
+- Not iteration over other ordered `typ`s (walk dates yourself). Time and
+  duration walk at `step`.
 
 ## Install
 
