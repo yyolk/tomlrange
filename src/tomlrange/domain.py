@@ -27,10 +27,13 @@ class Domain[T]:
     wrap, `from` after `to` walks across the seam. Cyclic `from == to`
     is a singleton — full coverage is `full()`.
 
-    When `typ is time`, endpoints are clock *position* (not duration).
-    `index` is seconds since midnight. Optional `step` (default one
-    minute) drives `walk` / `width` / `successor`. `wrap=True` allows
-    overnight `from` after `to`.
+    Shared `step` (a `timedelta`) drives tick walk / width / successor.
+    When `typ is time`, endpoints are clock *position* (not duration):
+    `index` is seconds since midnight, default step is one minute, and
+    `wrap=True` allows overnight `from` after `to`. When `typ` is
+    `timedelta`, convert is elapsed-time only (see
+    `tomlrange.duration.as_duration`), default step is 1s, and wrap is
+    forbidden — a length does not cross a midnight seam.
     """
 
     typ: type[T]
@@ -76,7 +79,11 @@ class Domain[T]:
                 raise ValueError("domain lo is after hi")
         elif self.lo is not None and self.hi is not None and self.lo > self.hi:  # type: ignore[operator]
             raise ValueError("domain lo is after hi")
-        if self.typ is time and self.members is None and self.step is None:
+        if self.typ is timedelta and self.wrap:
+            raise ValueError("timedelta domain cannot wrap")
+        if self.step is None and self.typ is timedelta:
+            object.__setattr__(self, "step", timedelta(seconds=1))
+        elif self.typ is time and self.members is None and self.step is None:
             object.__setattr__(self, "step", timedelta(minutes=1))
         if self.step is not None:
             if type(self.step) is not timedelta:
@@ -95,9 +102,13 @@ class Domain[T]:
         return self.keys[1]
 
     def convert(self, raw: Any, *, path: str) -> T:
-        if self.typ is time and self.members is None:
+        if self.typ is timedelta:
+            from tomlrange.duration import as_duration
+
+            raw = as_duration(raw, path=path)
+        elif self.typ is time and self.members is None:
             return self._convert_clock(raw, path=path)  # type: ignore[return-value]
-        if type(raw) is not self.typ:
+        elif type(raw) is not self.typ:
             raise TomlRangeError(
                 path,
                 f"expected {self.typ.__name__}, got {type(raw).__name__}",
@@ -175,6 +186,8 @@ class Domain[T]:
                 return seconds_since_midnight(member)
             if type(member) is int:
                 return member
+            if type(member) is timedelta:
+                return int(member.total_seconds())
             raise TypeError(f"{self.name} has no member index")
         try:
             return self.members.index(member)
@@ -200,6 +213,9 @@ class Domain[T]:
             return nxt.time()  # type: ignore[return-value]
         if type(member) is int:
             return member + 1  # type: ignore[return-value]
+        if type(member) is timedelta:
+            step = self.step if self.step is not None else timedelta(seconds=1)
+            return member + step  # type: ignore[return-value]
         return None
 
     def walk(self, start: T, stop: T) -> Iterator[T]:
@@ -219,6 +235,15 @@ class Domain[T]:
             return
         if type(start) is int and type(stop) is int:
             yield from range(start, stop + 1)
+            return
+        if type(start) is timedelta and type(stop) is timedelta:
+            if start > stop:
+                raise TypeError(f"{self.name} width is only defined for int")
+            step = self.step if self.step is not None else timedelta(seconds=1)
+            cur = start
+            while cur <= stop:
+                yield cur  # type: ignore[misc]
+                cur = cur + step
             return
         raise TypeError(f"{self.name} width is only defined for int")
 
@@ -258,6 +283,11 @@ class Domain[T]:
             return sum(1 for _ in self._walk_clock(start, stop))
         if type(start) is int and type(stop) is int:
             return stop - start + 1
+        if type(start) is timedelta and type(stop) is timedelta:
+            if start > stop:
+                raise TypeError(f"{self.name} width is only defined for int")
+            step = self.step if self.step is not None else timedelta(seconds=1)
+            return int((stop - start) / step) + 1
         raise TypeError(f"{self.name} width is only defined for int")
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
