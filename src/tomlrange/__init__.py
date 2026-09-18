@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from tomlrange.bound import Bound, Bounds
+from tomlrange.color import ROYGBIV, Color
 from tomlrange.domain import Domain, Spec
 from tomlrange.error import TomlRangeError
 from tomlrange.weekday import Weekday
@@ -13,8 +14,10 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 __all__ = [
+    "ROYGBIV",
     "Bound",
     "Bounds",
+    "Color",
     "Domain",
     "Spec",
     "TomlRangeError",
