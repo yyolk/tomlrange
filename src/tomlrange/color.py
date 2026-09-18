@@ -27,6 +27,3 @@ class Color(Spec):
     members = MEMBERS
     wrap = False
     aliases = ALIASES
-
-
-ROYGBIV = Color.domain

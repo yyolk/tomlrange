@@ -2,7 +2,7 @@ import tomllib
 
 import pytest
 
-from tomlrange import ROYGBIV, Bound, Color, TomlRangeError
+from tomlrange import Bound, Color, TomlRangeError
 from tomlrange.color import ALIASES
 
 VISIBLE = 'visible = { from = "red", to = "violet" }\n'
@@ -26,7 +26,6 @@ def test_color_spec_is_linear_roygbiv() -> None:
     )
     assert Color.wrap is False
     assert Color.aliases is ALIASES
-    assert Color.domain is ROYGBIV
     assert Color.domain.members == Color.members
     assert Color.domain.wrap is False
     assert Color.domain.aliases == ALIASES
@@ -107,7 +106,9 @@ def test_parse_many_and_domain_bound() -> None:
         "indigo",
         "violet",
     ]
-    assert ROYGBIV.bound({"from": "g", "to": "b"}) == Bound("green", "blue", ROYGBIV)
+    assert Color.domain.bound({"from": "g", "to": "b"}) == Bound(
+        "green", "blue", Color.domain
+    )
 
 
 def test_no_spectrum_module() -> None:
