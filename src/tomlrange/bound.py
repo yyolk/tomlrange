@@ -151,15 +151,9 @@ class Bound[T]:
 
     def adjacent_to(self, other: Bound[T]) -> bool:
         succ = _hook(self.domain, "successor")
-        if not callable(succ):
-            return False
-        if succ(self.stop, step=self.step) == other.start:
-            return True
-        if succ(other.stop, step=other.step) == self.start:
-            return True
-        if self.step is not None and succ(self.stop) == other.start:
-            return True
-        return other.step is not None and succ(other.stop) == self.start
+        if callable(succ):
+            return succ(self.stop) == other.start or succ(other.stop) == self.start
+        return False
 
     def __repr__(self) -> str:
         return f"Bound({self.start!r}, {self.stop!r}, {self.domain.name})"

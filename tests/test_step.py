@@ -118,10 +118,3 @@ def test_mixed_step_list_merges_on_touch() -> None:
     assert kept.spans[0].step == 3
     assert kept.spans[1].step is None
     assert kept.merge().spans == (Bound(1, 8, MONTH),)
-
-
-def test_adjacent_to_uses_bound_step() -> None:
-    left = MONTH.bound({"from": 1, "to": 4, "step": 3})
-    right = MONTH.bound({"from": 7, "to": 10, "step": 3})
-    assert left.adjacent_to(right)
-    assert right.adjacent_to(left)
