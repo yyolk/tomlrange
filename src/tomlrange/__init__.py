@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from tomlrange.bound import Bound, Bounds
+from tomlrange.clock import elapsed
 from tomlrange.domain import Clock, Domain, Spec
 from tomlrange.error import TomlRangeError
 
@@ -18,4 +19,5 @@ __all__ = [
     "Domain",
     "Spec",
     "TomlRangeError",
+    "elapsed",
 ]
