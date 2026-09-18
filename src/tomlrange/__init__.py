@@ -3,7 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from tomlrange.bound import Bound, Bounds
-from tomlrange.domain import Domain, Spec
+from tomlrange.domain import Clock, Domain, Spec
 from tomlrange.error import TomlRangeError
 
 try:
@@ -14,6 +14,7 @@ except PackageNotFoundError:
 __all__ = [
     "Bound",
     "Bounds",
+    "Clock",
     "Domain",
     "Spec",
     "TomlRangeError",

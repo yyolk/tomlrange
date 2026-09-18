@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
+from tomlrange.clock import seconds_since_midnight
 from tomlrange.error import TomlRangeError
 
 if TYPE_CHECKING:
@@ -24,6 +26,11 @@ class Domain[T]:
     cyclic topology: linear domains still reject inverted tables; with
     wrap, `from` after `to` walks across the seam. Cyclic `from == to`
     is a singleton — full coverage is `full()`.
+
+    When `typ is time`, endpoints are clock *position* (not duration).
+    `index` is seconds since midnight. Optional `step` (default one
+    minute) drives `walk` / `width` / `successor`. `wrap=True` allows
+    overnight `from` after `to`.
     """
 
     typ: type[T]
@@ -33,6 +40,7 @@ class Domain[T]:
     keys: tuple[str, str] = (_FROM, _TO)
     members: tuple[T, ...] | None = None
     wrap: bool = False
+    step: Any = None
 
     def __post_init__(self) -> None:
         if len(self.keys) != 2 or self.keys[0] == self.keys[1]:
@@ -68,6 +76,15 @@ class Domain[T]:
                 raise ValueError("domain lo is after hi")
         elif self.lo is not None and self.hi is not None and self.lo > self.hi:  # type: ignore[operator]
             raise ValueError("domain lo is after hi")
+        if self.typ is time and self.members is None and self.step is None:
+            object.__setattr__(self, "step", timedelta(minutes=1))
+        if self.step is not None:
+            if type(self.step) is not timedelta:
+                raise TypeError("step must be timedelta")
+            if self.step <= timedelta(0) or self.step >= timedelta(days=1):
+                raise ValueError(
+                    "step must be a positive interval shorter than one day"
+                )
 
     @property
     def start_key(self) -> str:
@@ -78,6 +95,8 @@ class Domain[T]:
         return self.keys[1]
 
     def convert(self, raw: Any, *, path: str) -> T:
+        if self.typ is time and self.members is None:
+            return self._convert_clock(raw, path=path)  # type: ignore[return-value]
         if type(raw) is not self.typ:
             raise TomlRangeError(
                 path,
@@ -118,8 +137,40 @@ class Domain[T]:
             )
         return raw
 
+    def _convert_clock(self, raw: Any, *, path: str) -> time:
+        # Position on the 24h line. Do not read time as since-midnight duration.
+        if type(raw) is time:
+            if raw.tzinfo is not None:
+                raise TomlRangeError(
+                    path,
+                    f"aware time is not a local {self.name}",
+                    raw,
+                )
+            value = raw
+        else:
+            raise TomlRangeError(
+                path,
+                f"expected {self.typ.__name__}, got {type(raw).__name__}",
+                raw,
+            )
+        if self.lo is not None and value < self.lo:  # type: ignore[operator]
+            raise TomlRangeError(
+                path,
+                f"{value!r} is below {self.name} {self.lo}",
+                raw,
+            )
+        if self.hi is not None and value > self.hi:  # type: ignore[operator]
+            raise TomlRangeError(
+                path,
+                f"{value!r} is above {self.name} {self.hi}",
+                raw,
+            )
+        return value
+
     def index(self, member: T) -> int:
         if self.members is None:
+            if type(member) is time and self.typ is time:
+                return seconds_since_midnight(member)
             if type(member) is int:
                 return member
             raise TypeError(f"{self.name} has no member index")
@@ -140,6 +191,11 @@ class Domain[T]:
             if self.wrap:
                 return self.members[0]
             return None
+        if self.typ is time and self.members is None and type(member) is time:
+            nxt = datetime.combine(date.min, member) + self.step
+            if nxt.date() != date.min:
+                return nxt.time() if self.wrap else None  # type: ignore[return-value]
+            return nxt.time()  # type: ignore[return-value]
         if type(member) is int:
             return member + 1  # type: ignore[return-value]
         return None
@@ -156,10 +212,36 @@ class Domain[T]:
                 yield from self.members[: j + 1]
                 return
             raise TypeError(f"{self.name} width is only defined for int")
+        if self.typ is time and type(start) is time and type(stop) is time:
+            yield from self._walk_clock(start, stop)  # type: ignore[misc]
+            return
         if type(start) is int and type(stop) is int:
             yield from range(start, stop + 1)
             return
         raise TypeError(f"{self.name} width is only defined for int")
+
+    def _walk_clock(self, start: time, stop: time) -> Iterator[time]:
+        wrapping = self.index(start) > self.index(stop)  # type: ignore[arg-type]
+        if wrapping and not self.wrap:
+            raise TypeError(f"{self.name} width is only defined for int")
+        cur = start
+        crossed = False
+        while True:
+            yield cur
+            nxt = self.successor(cur)  # type: ignore[arg-type]
+            if nxt is None:
+                return
+            nxt_dt = datetime.combine(date.min, cur) + self.step
+            if nxt_dt.date() != date.min:
+                crossed = True
+                if not wrapping:
+                    return
+            if wrapping:
+                if crossed and self.index(nxt) > self.index(stop):  # type: ignore[arg-type]
+                    return
+            elif self.index(nxt) > self.index(stop):  # type: ignore[arg-type]
+                return
+            cur = nxt  # type: ignore[assignment]
 
     def width(self, start: T, stop: T) -> int:
         if self.members is not None:
@@ -170,6 +252,8 @@ class Domain[T]:
             if self.wrap:
                 return len(self.members) - i + j + 1
             raise TypeError(f"{self.name} width is only defined for int")
+        if self.typ is time and type(start) is time and type(stop) is time:
+            return sum(1 for _ in self._walk_clock(start, stop))
         if type(start) is int and type(stop) is int:
             return stop - start + 1
         raise TypeError(f"{self.name} width is only defined for int")
@@ -221,6 +305,7 @@ class Spec:
     keys: tuple[str, str] = (_FROM, _TO)
     members: tuple[Any, ...] | None = None
     wrap: bool = False
+    step: Any = None
     overlap: Overlap = "reject"
     domain: Domain[Any]
 
@@ -242,6 +327,7 @@ class Spec:
             keys=cls.keys,
             members=cls.members,
             wrap=cls.wrap,
+            step=cls.step,
         )
 
     @classmethod
@@ -270,3 +356,13 @@ class Spec:
     @classmethod
     def full(cls) -> Bound[Any]:
         return cls.domain.full()
+
+
+class Clock(Spec):
+    """Time-of-day position on the 24h line. Not duration."""
+
+    typ = time
+    lo = time(0, 0)
+    hi = time(23, 59, 59)
+    name = "time"
+    wrap = False

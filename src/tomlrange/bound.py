@@ -25,6 +25,13 @@ def _hook(domain: object, name: str) -> Any:
     return getattr(domain, name, None)
 
 
+def _wraps(domain: object) -> bool:
+    """Cyclic walk: named members, or a stepped clock (not int wrap)."""
+    return bool(_hook(domain, "wrap")) and (
+        _hook(domain, "members") is not None or _hook(domain, "step") is not None
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Bound[T]:
     """One inclusive interval parsed from a `{ from, to }` table."""
@@ -52,9 +59,7 @@ class Bound[T]:
             )
         start = domain.convert(table[start_key], path=join_path(path, start_key))
         stop = domain.convert(table[stop_key], path=join_path(path, stop_key))
-        if _inverted(domain, start, stop) and not (
-            _hook(domain, "wrap") and _hook(domain, "members") is not None
-        ):
+        if _inverted(domain, start, stop) and not _wraps(domain):
             raise TomlRangeError(
                 path,
                 f"{start_key} ({start}) is after {stop_key} ({stop})",
@@ -103,6 +108,8 @@ class Bound[T]:
             if _hook(self.domain, "wrap"):
                 return k >= i or k <= j
             return False
+        if _wraps(self.domain) and _inverted(self.domain, self.start, self.stop):
+            return self.start <= item or item <= self.stop  # type: ignore[operator]
         return self.start <= item <= self.stop  # type: ignore[operator]
 
     def __iter__(self) -> Iterator[T]:
@@ -118,7 +125,16 @@ class Bound[T]:
 
     def overlaps(self, other: Bound[T]) -> bool:
         walk = _hook(self.domain, "walk")
-        if _hook(self.domain, "members") is not None and callable(walk):
+        if callable(walk) and (
+            _hook(self.domain, "members") is not None
+            or (
+                _wraps(self.domain)
+                and (
+                    _inverted(self.domain, self.start, self.stop)
+                    or _inverted(self.domain, other.start, other.stop)
+                )
+            )
+        ):
             return bool(
                 set(walk(self.start, self.stop)) & set(walk(other.start, other.stop))
             )
@@ -228,6 +244,8 @@ def _coalesce[T](
         return ()
     if _hook(domain, "members") is not None:
         return _coalesce_members(spans, domain)
+    if _wraps(domain):
+        return _coalesce_circular(spans, domain)
     ordered = sorted(spans, key=lambda s: (s.start, s.stop))
     out = [ordered[0]]
     for cur in ordered[1:]:
@@ -270,6 +288,56 @@ def _coalesce_members[T](
     bounds = [_bound_from_members(group, domain) for group in groups if group]
     bounds.sort(key=lambda span: domain.index(span.start))
     return tuple(bounds)
+
+
+def _coalesce_circular[T](
+    spans: tuple[Bound[T], ...], domain: Domain[T]
+) -> tuple[Bound[T], ...]:
+    groups: list[set[T]] = [set(domain.walk(span.start, span.stop)) for span in spans]
+    changed = True
+    while changed:
+        changed = False
+        out: list[set[T]] = []
+        used = [False] * len(groups)
+        for i, group in enumerate(groups):
+            if used[i]:
+                continue
+            acc = set(group)
+            used[i] = True
+            grew = True
+            while grew:
+                grew = False
+                for j, other in enumerate(groups):
+                    if used[j]:
+                        continue
+                    if acc & other or _sets_adjacent(acc, other, domain):
+                        acc |= other
+                        used[j] = True
+                        grew = True
+                        changed = True
+            out.append(acc)
+        groups = out
+    bounds = [_bound_from_ticks(group, domain) for group in groups if group]
+    bounds.sort(key=lambda span: domain.index(span.start))
+    return tuple(bounds)
+
+
+def _bound_from_ticks[T](ticks: set[T], domain: Domain[T]) -> Bound[T]:
+    ordered = sorted(ticks, key=domain.index)
+    if len(ordered) == 1:
+        return Bound(ordered[0], ordered[0], domain)
+    succ = _hook(domain, "successor")
+    gaps = [
+        i
+        for i in range(len(ordered) - 1)
+        if not callable(succ) or succ(ordered[i]) != ordered[i + 1]
+    ]
+    if not gaps:
+        return Bound(ordered[0], ordered[-1], domain)
+    if _hook(domain, "wrap") and len(gaps) == 1:
+        gap = gaps[0]
+        return Bound(ordered[gap + 1], ordered[gap], domain)
+    return Bound(ordered[0], ordered[-1], domain)
 
 
 def _sets_adjacent[T](left: set[T], right: set[T], domain: Domain[T]) -> bool:
