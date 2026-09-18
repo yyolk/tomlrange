@@ -1,5 +1,6 @@
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from tomlrange.domain import Domain
@@ -8,6 +9,8 @@ from tomlrange.paths import index_path, join_path
 
 if TYPE_CHECKING:
     from tomlrange.paths import Overlap
+
+_STEP = "step"
 
 
 def _as_table(raw: Any, *, path: str, keys: tuple[str, str]) -> Mapping[str, Any]:
@@ -39,12 +42,13 @@ class Bound[T]:
     start: T
     stop: T
     domain: Domain[T]
+    step: Any = None
 
     @classmethod
     def parse(cls, raw: Any, domain: Domain[T], *, path: str = ".") -> Bound[T]:
         start_key, stop_key = domain.keys
         table = _as_table(raw, path=path, keys=domain.keys)
-        extra = set(table) - {start_key, stop_key}
+        extra = set(table) - {start_key, stop_key, _STEP}
         if extra:
             raise TomlRangeError(
                 path,
@@ -65,7 +69,7 @@ class Bound[T]:
                 f"{start_key} ({start}) is after {stop_key} ({stop})",
                 raw,
             )
-        return cls(start, stop, domain)
+        return cls(start, stop, domain, _parse_step(table, domain, path=path))
 
     def _require_int(self) -> None:
         if type(self.start) is not int or type(self.stop) is not int:
@@ -75,7 +79,7 @@ class Bound[T]:
     def width(self) -> int:
         hook = _hook(self.domain, "width")
         if callable(hook):
-            return hook(self.start, self.stop)
+            return hook(self.start, self.stop, step=self.step)
         self._require_int()
         return self.stop - self.start + 1  # type: ignore[operator]
 
@@ -83,14 +87,19 @@ class Bound[T]:
         self._require_int()
         if _hook(self.domain, "members") is not None:
             raise TypeError(f"{self.domain.name} width is only defined for int")
-        return range(self.start, self.stop + 1)  # type: ignore[arg-type]
+        stride = self.step if type(self.step) is int else 1
+        return range(self.start, self.stop + 1, stride)  # type: ignore[arg-type]
 
     def as_tuple(self) -> tuple[T, T]:
         return (self.start, self.stop)
 
-    def as_table(self) -> dict[str, T]:
+    def as_table(self) -> dict[str, Any]:
         start_key, stop_key = self.domain.keys
-        return {start_key: self.start, stop_key: self.stop}
+        table: dict[str, Any] = {start_key: self.start, stop_key: self.stop}
+        count = _step_count(self)
+        if count is not None:
+            table[_STEP] = count
+        return table
 
     def __contains__(self, item: object) -> bool:
         if type(item) is not self.domain.typ:
@@ -115,7 +124,7 @@ class Bound[T]:
     def __iter__(self) -> Iterator[T]:
         walk = _hook(self.domain, "walk")
         if callable(walk):
-            yield from walk(self.start, self.stop)
+            yield from walk(self.start, self.stop, step=self.step)
             return
         self._require_int()
         yield from self.as_range()  # type: ignore[misc]
@@ -227,6 +236,43 @@ class Bounds[T]:
     def __repr__(self) -> str:
         inner = ", ".join(f"{s.start!r}..{s.stop!r}" for s in self.spans)
         return f"Bounds({inner}, {self.domain.name})"
+
+
+def _parse_step(table: Mapping[str, Any], domain: Domain[Any], *, path: str) -> Any:
+    if _STEP not in table:
+        return None
+    raw = table[_STEP]
+    loc = join_path(path, _STEP)
+    if _hook(domain, "members") is not None:
+        raise TomlRangeError(loc, "step is not allowed on a members domain", raw)
+    if type(raw) is not int:
+        raise TomlRangeError(
+            loc,
+            f"expected int, got {type(raw).__name__}",
+            raw,
+        )
+    if raw <= 0:
+        raise TomlRangeError(loc, "step must be a positive int", raw)
+    if domain.typ is int:
+        return raw
+    tick = _hook(domain, "step")
+    if type(tick) is timedelta:
+        return raw * tick
+    raise TomlRangeError(loc, f"step is not allowed on {domain.name}", raw)
+
+
+def _step_count(bound: Bound[Any]) -> int | None:
+    override = bound.step
+    if override is None:
+        return None
+    if type(override) is int:
+        return None if override == 1 else override
+    default = _hook(bound.domain, "step")
+    if type(override) is timedelta and type(default) is timedelta:
+        if override == default:
+            return None
+        return override // default
+    return None
 
 
 def _inverted(domain: Domain[Any], start: Any, stop: Any) -> bool:

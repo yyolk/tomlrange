@@ -109,19 +109,28 @@ assert hours.as_tuple()[0].hour == 9
 assert type(hours.start) is time
 assert type(hours.stop) is time
 assert elapsed(hours) == timedelta(hours=8)
+
+quarter = Clock.parse(
+    tomllib.loads("open = { from = 09:00:00, to = 17:00:00, step = 15 }")["open"]
+)
+assert quarter.step == timedelta(minutes=15)
+assert quarter.domain.step == timedelta(minutes=1)
 ```
 
 `elapsed` is derived walk length (`(width - 1) * step`) — endpoints stay
 `time`. `wrap=True` allows overnight `{ from = 22:00:00, to = 02:00:00 }`
 (`elapsed` is then the wrap walk, 4 hours). A singleton is one tick, not
-a full day.
+a full day. Optional table `step` is a positive int count of the domain
+grain (Clock default one minute, so `step = 15` is 15 minutes). Omit it
+and walk stays `Domain.step`, or `+1` on ints.
 
 ## Validation
 
 On one table:
 
 - value is a mapping
-- keys are exactly `from` and `to` (override with `Domain(..., keys=("start", "end"))`)
+- keys are `from` and `to` (override with `Domain(..., keys=("start", "end"))`) plus
+  optional `step`
 - each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`).
   A time domain accepts naive `datetime.time` only. Aware times, dates,
   datetimes, timedeltas, and strings are rejected
@@ -136,7 +145,8 @@ Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
 Member domains overlap and merge on member identity, not string order.
 
 `list()`, `len()`, and `width` work for `int`, `members`, and `datetime.time`
-(at `Domain.step`, default one minute). `as_range()` is int-only. Other
+(at the bound's `step` when set, else `Domain.step`, default one minute).
+`as_range()` is int-only. Other
 ordered `typ`s raise `TypeError` (`"{name} width is only defined for int"`).
 Membership, `as_tuple()`, and `as_table()` work for any ordered `typ`.
 
@@ -152,8 +162,6 @@ months_ranges[1].to: 13 is above month 12
 - Not string ranges (`"1-12"`, `"Jan–Apr"`, `"9AM-5PM"`).
 - Not a two-element array (`[1, 12]`). After TOML decode that is a list, not a table.
 - Not wrap-around unless the domain sets `wrap=True`.
-- Not a TOML `step` key. A range table is a closed interval. Clock grain is a
-  domain fact (`step=timedelta(minutes=1)`).
 - Not a free-for-all `str` domain. Names need `members`.
 - Not iteration over other ordered `typ`s (walk dates yourself). Time walks at `step`.
 

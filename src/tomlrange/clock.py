@@ -28,7 +28,7 @@ def elapsed(bound: Bound[time]) -> timedelta:
     start, stop = bound.start, bound.stop
     if type(start) is not time or type(stop) is not time:
         raise TypeError("elapsed is only defined for time bounds")
-    step = bound.domain.step
+    step = bound.step if bound.step is not None else bound.domain.step
     if type(step) is not timedelta:
         raise TypeError("elapsed is only defined for time bounds")
     return (bound.width - 1) * step

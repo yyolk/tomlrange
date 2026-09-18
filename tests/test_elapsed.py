@@ -52,6 +52,13 @@ def test_elapsed_overnight_wrap_walk() -> None:
     assert elapsed(bound) == (len(ticks) - 1) * night.step
 
 
+def test_elapsed_stepped_clock_bound() -> None:
+    bound = Clock.parse({"from": time(9, 0), "to": time(17, 0), "step": 15})
+    assert bound.step == timedelta(minutes=15)
+    assert bound.domain.step == timedelta(minutes=1)
+    assert elapsed(bound) == timedelta(hours=8)
+
+
 def test_elapsed_rejects_non_time_bound() -> None:
     month = Domain(int, lo=1, hi=12, name="month")
     with pytest.raises(TypeError, match="elapsed is only defined for time bounds"):
