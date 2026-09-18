@@ -21,6 +21,10 @@ def _as_table(raw: Any, *, path: str, keys: tuple[str, str]) -> Mapping[str, Any
     )
 
 
+def _hook(domain: object, name: str) -> Any:
+    return getattr(domain, name, None)
+
+
 @dataclass(frozen=True, slots=True)
 class Bound[T]:
     """One inclusive interval parsed from a `{ from, to }` table."""
@@ -48,7 +52,9 @@ class Bound[T]:
             )
         start = domain.convert(table[start_key], path=join_path(path, start_key))
         stop = domain.convert(table[stop_key], path=join_path(path, stop_key))
-        if start > stop:  # type: ignore[operator]
+        if _inverted(domain, start, stop) and not (
+            _hook(domain, "wrap") and _hook(domain, "members") is not None
+        ):
             raise TomlRangeError(
                 path,
                 f"{start_key} ({start}) is after {stop_key} ({stop})",
@@ -62,11 +68,16 @@ class Bound[T]:
 
     @property
     def width(self) -> int:
+        hook = _hook(self.domain, "width")
+        if callable(hook):
+            return hook(self.start, self.stop)
         self._require_int()
         return self.stop - self.start + 1  # type: ignore[operator]
 
     def as_range(self) -> range:
         self._require_int()
+        if _hook(self.domain, "members") is not None:
+            raise TypeError(f"{self.domain.name} width is only defined for int")
         return range(self.start, self.stop + 1)  # type: ignore[arg-type]
 
     def as_tuple(self) -> tuple[T, T]:
@@ -79,23 +90,45 @@ class Bound[T]:
     def __contains__(self, item: object) -> bool:
         if type(item) is not self.domain.typ:
             return False
+        members = _hook(self.domain, "members")
+        index = _hook(self.domain, "index")
+        if members is not None and callable(index):
+            if item not in members:
+                return False
+            i = index(self.start)
+            j = index(self.stop)
+            k = index(item)
+            if i <= j:
+                return i <= k <= j
+            if _hook(self.domain, "wrap"):
+                return k >= i or k <= j
+            return False
         return self.start <= item <= self.stop  # type: ignore[operator]
 
     def __iter__(self) -> Iterator[T]:
+        walk = _hook(self.domain, "walk")
+        if callable(walk):
+            yield from walk(self.start, self.stop)
+            return
         self._require_int()
         yield from self.as_range()  # type: ignore[misc]
 
     def __len__(self) -> int:
-        self._require_int()
         return self.width
 
     def overlaps(self, other: Bound[T]) -> bool:
+        walk = _hook(self.domain, "walk")
+        if _hook(self.domain, "members") is not None and callable(walk):
+            return bool(
+                set(walk(self.start, self.stop)) & set(walk(other.start, other.stop))
+            )
         return self.start <= other.stop and other.start <= self.stop  # type: ignore[operator]
 
     def adjacent_to(self, other: Bound[T]) -> bool:
-        if self.domain.typ is not int:
-            return False
-        return self.stop + 1 == other.start or other.stop + 1 == self.start  # type: ignore[operator, return-value]
+        succ = _hook(self.domain, "successor")
+        if callable(succ):
+            return succ(self.stop) == other.start or succ(other.stop) == self.start
+        return False
 
     def __repr__(self) -> str:
         return f"Bound({self.start!r}, {self.stop!r}, {self.domain.name})"
@@ -157,10 +190,6 @@ class Bounds[T]:
     def merge(self) -> Bounds[T]:
         return Bounds(_coalesce(self.spans, self.domain), self.domain)
 
-    def _require_int(self) -> None:
-        if self.domain.typ is not int:
-            raise TypeError(f"{self.domain.name} width is only defined for int")
-
     def covers(self, item: object) -> bool:
         return any(item in span for span in self.spans)
 
@@ -168,7 +197,6 @@ class Bounds[T]:
         return self.covers(item)
 
     def __iter__(self) -> Iterator[T]:
-        self._require_int()
         seen: set[T] = set()
         for span in self.spans:
             for item in span:
@@ -178,7 +206,6 @@ class Bounds[T]:
                 yield item
 
     def __len__(self) -> int:
-        self._require_int()
         return sum(1 for _ in self)
 
     def __repr__(self) -> str:
@@ -186,11 +213,21 @@ class Bounds[T]:
         return f"Bounds({inner}, {self.domain.name})"
 
 
+def _inverted(domain: Domain[Any], start: Any, stop: Any) -> bool:
+    members = _hook(domain, "members")
+    index = _hook(domain, "index")
+    if members is not None and callable(index):
+        return index(start) > index(stop)
+    return start > stop
+
+
 def _coalesce[T](
     spans: tuple[Bound[T], ...], domain: Domain[T]
 ) -> tuple[Bound[T], ...]:
     if not spans:
         return ()
+    if _hook(domain, "members") is not None:
+        return _coalesce_members(spans, domain)
     ordered = sorted(spans, key=lambda s: (s.start, s.stop))
     out = [ordered[0]]
     for cur in ordered[1:]:
@@ -201,3 +238,60 @@ def _coalesce[T](
         else:
             out.append(cur)
     return tuple(out)
+
+
+def _coalesce_members[T](
+    spans: tuple[Bound[T], ...], domain: Domain[T]
+) -> tuple[Bound[T], ...]:
+    groups: list[set[T]] = [set(domain.walk(span.start, span.stop)) for span in spans]
+    changed = True
+    while changed:
+        changed = False
+        out: list[set[T]] = []
+        used = [False] * len(groups)
+        for i, group in enumerate(groups):
+            if used[i]:
+                continue
+            acc = set(group)
+            used[i] = True
+            grew = True
+            while grew:
+                grew = False
+                for j, other in enumerate(groups):
+                    if used[j]:
+                        continue
+                    if acc & other or _sets_adjacent(acc, other, domain):
+                        acc |= other
+                        used[j] = True
+                        grew = True
+                        changed = True
+            out.append(acc)
+        groups = out
+    bounds = [_bound_from_members(group, domain) for group in groups if group]
+    bounds.sort(key=lambda span: domain.index(span.start))
+    return tuple(bounds)
+
+
+def _sets_adjacent[T](left: set[T], right: set[T], domain: Domain[T]) -> bool:
+    succ = _hook(domain, "successor")
+    if not callable(succ):
+        return False
+    return any(succ(item) in right for item in left) or any(
+        succ(item) in left for item in right
+    )
+
+
+def _bound_from_members[T](members: set[T], domain: Domain[T]) -> Bound[T]:
+    order = domain.members
+    assert order is not None
+    flags = [item in members for item in order]
+    if all(flags):
+        return Bound(order[0], order[-1], domain)
+    n = len(flags)
+    wrap = bool(_hook(domain, "wrap"))
+    if wrap and flags[0] and flags[-1]:
+        start_i = next(i for i in range(n) if flags[i] and not flags[(i - 1) % n])
+        stop_i = next(i for i in range(n) if flags[i] and not flags[(i + 1) % n])
+        return Bound(order[start_i], order[stop_i], domain)
+    idxs = [i for i, flag in enumerate(flags) if flag]
+    return Bound(order[idxs[0]], order[idxs[-1]], domain)
