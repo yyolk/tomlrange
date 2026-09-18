@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any
 
 from tomlrange.error import TomlRangeError
@@ -13,12 +14,23 @@ _FROM = "from"
 _TO = "to"
 
 
+def _parse_iso_date(raw: str) -> date | None:
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError:
+        return None
+    if raw != parsed.isoformat():
+        return None
+    return parsed
+
+
 @dataclass(frozen=True, slots=True)
 class Domain[T]:
     """Closed interval domain for a `{ from, to }` table.
 
     `typ` is matched with `type(raw) is typ` — `bool` is not an `int`,
-    and a TOML float is not an `int`.
+    and a TOML float is not an `int`. A `date` domain also accepts ISO
+    `YYYY-MM-DD` strings.
 
     Optional `members` is a named discrete order. Optional `wrap` is a
     cyclic topology: linear domains still reject inverted tables; with
@@ -78,7 +90,9 @@ class Domain[T]:
         return self.keys[1]
 
     def convert(self, raw: Any, *, path: str) -> T:
-        if type(raw) is not self.typ:
+        if self.typ is date:
+            raw = self._convert_date(raw, path=path)
+        elif type(raw) is not self.typ:
             raise TomlRangeError(
                 path,
                 f"expected {self.typ.__name__}, got {type(raw).__name__}",
@@ -118,10 +132,30 @@ class Domain[T]:
             )
         return raw
 
+    def _convert_date(self, raw: Any, *, path: str) -> date:
+        if type(raw) is date:
+            return raw
+        if type(raw) is str:
+            parsed = _parse_iso_date(raw)
+            if parsed is None:
+                raise TomlRangeError(
+                    path,
+                    f"expected YYYY-MM-DD, got {raw!r}",
+                    raw,
+                )
+            return parsed
+        raise TomlRangeError(
+            path,
+            f"expected {self.typ.__name__}, got {type(raw).__name__}",
+            raw,
+        )
+
     def index(self, member: T) -> int:
         if self.members is None:
             if type(member) is int:
                 return member
+            if self.typ is date and type(member) is date:
+                return member.toordinal()
             raise TypeError(f"{self.name} has no member index")
         try:
             return self.members.index(member)
@@ -142,6 +176,8 @@ class Domain[T]:
             return None
         if type(member) is int:
             return member + 1  # type: ignore[return-value]
+        if self.typ is date and type(member) is date:
+            return member + timedelta(days=1)  # type: ignore[return-value]
         return None
 
     def walk(self, start: T, stop: T) -> Iterator[T]:
@@ -159,6 +195,14 @@ class Domain[T]:
         if type(start) is int and type(stop) is int:
             yield from range(start, stop + 1)
             return
+        if self.typ is date and type(start) is date and type(stop) is date:
+            if start <= stop:
+                day = start
+                while day <= stop:
+                    yield day  # type: ignore[misc]
+                    day += timedelta(days=1)
+                return
+            raise TypeError(f"{self.name} width is only defined for int")
         raise TypeError(f"{self.name} width is only defined for int")
 
     def width(self, start: T, stop: T) -> int:
@@ -172,6 +216,10 @@ class Domain[T]:
             raise TypeError(f"{self.name} width is only defined for int")
         if type(start) is int and type(stop) is int:
             return stop - start + 1
+        if self.typ is date and type(start) is date and type(stop) is date:
+            if start <= stop:
+                return (stop - start).days + 1
+            raise TypeError(f"{self.name} width is only defined for int")
         raise TypeError(f"{self.name} width is only defined for int")
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
@@ -270,3 +318,10 @@ class Spec:
     @classmethod
     def full(cls) -> Bound[Any]:
         return cls.domain.full()
+
+
+class Day(Spec):
+    """Calendar-day domain. Endpoints are `date` or ISO `YYYY-MM-DD`."""
+
+    typ = date
+    name = "date"

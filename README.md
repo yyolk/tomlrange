@@ -39,7 +39,9 @@ to = 10
 
 ```python
 import tomllib
-from tomlrange import Domain
+from datetime import date
+
+from tomlrange import Day, Domain
 
 Month = Domain(int, lo=1, hi=12, name="month")
 
@@ -49,6 +51,10 @@ windows = Month.bounds(data["windows"])  # 1..4 and 6..10
 
 assert list(year) == list(range(1, 13))
 assert 5 not in windows
+
+# TOML dates are unquoted YYYY-MM-DD; tomllib yields datetime.date
+week = Day.parse(data["span"])  # from = 2026-01-01, to = 2026-01-07
+assert list(week)[0] == date(2026, 1, 1)
 ```
 
 No runtime dependencies. Endpoints stay the type `tomllib` gave you.
@@ -95,6 +101,24 @@ class Weekday(Spec):
 list(Weekday.parse({"from": "sat", "to": "mon"}))  # sat, sun, mon
 ```
 
+Calendar days use successor hooks, not `members`. `lo` / `hi` are an optional
+planner window. ISO `YYYY-MM-DD` strings convert; `datetime` does not.
+
+```python
+from datetime import date
+
+from tomlrange import Spec
+
+
+class Book(Spec):
+    typ = date
+    lo = date(2026, 1, 1)
+    hi = date(2026, 12, 31)
+
+
+list(Book.parse({"from": date(2026, 1, 1), "to": date(2026, 1, 7)}))
+```
+
 ## Validation
 
 On one table:
@@ -102,6 +126,7 @@ On one table:
 - value is a mapping
 - keys are exactly `from` and `to` (override with `Domain(..., keys=("start", "end"))`)
 - each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`)
+- a `date` domain also accepts ISO `YYYY-MM-DD` strings
 - endpoints sit inside `lo` / `hi` when those are set
 - when `members` is set, each endpoint is an exact member (unknown → error at `from` / `to`)
 - `from <= to` in domain order (a singleton is `{ from = 3, to = 3 }`); with
@@ -111,9 +136,10 @@ On a list, `overlap=` is `"reject"` (default), `"allow"`, or `"merge"`.
 Reject treats a shared endpoint as overlap (`1–4` and `4–6` fail).
 Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
 Member domains overlap and merge on member identity, not string order.
+Date domains compare and merge on calendar ordinal; month seams still touch.
 
-`list()`, `len()`, and `width` work for `int` and for `members`. `as_range()`
-is int-only. Other ordered `typ`s raise `TypeError`
+`list()`, `len()`, and `width` work for `int`, `members`, and `date`.
+`as_range()` is int-only. Other ordered `typ`s raise `TypeError`
 (`"{name} width is only defined for int"`). Membership, `as_tuple()`, and
 `as_table()` work for any ordered `typ`.
 
@@ -131,7 +157,8 @@ months_ranges[1].to: 13 is above month 12
 - Not wrap-around unless the domain sets `wrap=True`.
 - Not `step`. A range table is a closed interval.
 - Not a free-for-all `str` domain. Names need `members`.
-- Not iteration over a non-int domain without `members`. Walk dates yourself.
+- Not iteration over a non-int / non-date domain without `members`.
+- Not datetime or time-of-day ranges.
 
 ## Install
 
