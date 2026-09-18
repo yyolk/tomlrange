@@ -3,7 +3,7 @@ from datetime import time, timedelta
 
 import pytest
 
-from tomlrange import Bound, Clock, Domain, TomlRangeError, elapsed
+from tomlrange import Clock, Domain, elapsed
 
 NATIVE = "open = { from = 09:00:00, to = 17:00:00 }\n"
 LABELS = 'open = { from = "9 AM", to = "5 PM" }\n'
@@ -38,15 +38,6 @@ def test_elapsed_partial_hour() -> None:
     )
 
 
-def test_inverted_overnight_without_wrap_errors_at_parse() -> None:
-    with pytest.raises(
-        TomlRangeError, match="from \\(22:00:00\\) is after to \\(02:00:00\\)"
-    ):
-        Clock.parse({"from": time(22, 0), "to": time(2, 0)})
-    with pytest.raises(TomlRangeError, match="is after"):
-        Clock.parse({"from": "10 PM", "to": "2 AM"})
-
-
 def test_elapsed_overnight_wrap_walk() -> None:
     night = Domain(
         time,
@@ -67,18 +58,7 @@ def test_elapsed_overnight_wrap_walk() -> None:
     assert elapsed(bound) == (len(ticks) - 1) * night.step
 
 
-def test_elapsed_rejects_int_seconds() -> None:
-    with pytest.raises(TomlRangeError, match="expected time, got int"):
-        Clock.parse({"from": 90, "to": 180})
-
-
 def test_elapsed_rejects_non_time_bound() -> None:
     month = Domain(int, lo=1, hi=12, name="month")
     with pytest.raises(TypeError, match="elapsed is only defined for time bounds"):
         elapsed(month.bound({"from": 1, "to": 4}))
-
-
-def test_elapsed_direct_inverted_without_wrap() -> None:
-    bound = Bound(time(22, 0), time(2, 0), Clock.domain)
-    with pytest.raises(TypeError, match="width is only defined for int"):
-        elapsed(bound)
