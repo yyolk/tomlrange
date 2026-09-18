@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any
 from tomlrange.error import TomlRangeError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from tomlrange.bound import Bound, Bounds
     from tomlrange.paths import Overlap
 
@@ -17,6 +19,11 @@ class Domain[T]:
 
     `typ` is matched with `type(raw) is typ` — `bool` is not an `int`,
     and a TOML float is not an `int`.
+
+    Optional `members` is a named discrete order. Optional `wrap` is a
+    cyclic topology: linear domains still reject inverted tables; with
+    wrap, `from` after `to` walks across the seam. Cyclic `from == to`
+    is a singleton — full coverage is `full()`.
     """
 
     typ: type[T]
@@ -24,15 +31,42 @@ class Domain[T]:
     hi: T | None = None
     name: str = "value"
     keys: tuple[str, str] = (_FROM, _TO)
+    members: tuple[T, ...] | None = None
+    wrap: bool = False
 
     def __post_init__(self) -> None:
         if len(self.keys) != 2 or self.keys[0] == self.keys[1]:
             raise ValueError("keys must be two distinct TOML key names")
+        if type(self.wrap) is not bool:
+            raise TypeError("wrap must be bool")
+        if self.members is not None:
+            members = tuple(self.members)
+            if not members:
+                raise ValueError("members must be non-empty")
+            seen: set[T] = set()
+            for member in members:
+                if type(member) is not self.typ:
+                    raise TypeError(f"members must be {self.typ.__name__}")
+                if member in seen:
+                    raise ValueError("members must be unique")
+                seen.add(member)
+            object.__setattr__(self, "members", members)
         if self.lo is not None and type(self.lo) is not self.typ:
             raise TypeError(f"lo must be {self.typ.__name__}")
         if self.hi is not None and type(self.hi) is not self.typ:
             raise TypeError(f"hi must be {self.typ.__name__}")
-        if self.lo is not None and self.hi is not None and self.lo > self.hi:  # type: ignore[operator]
+        if self.members is not None:
+            if self.lo is not None and self.lo not in self.members:
+                raise ValueError("lo must be a member")
+            if self.hi is not None and self.hi not in self.members:
+                raise ValueError("hi must be a member")
+            if (
+                self.lo is not None
+                and self.hi is not None
+                and self.index(self.lo) > self.index(self.hi)
+            ):
+                raise ValueError("domain lo is after hi")
+        elif self.lo is not None and self.hi is not None and self.lo > self.hi:  # type: ignore[operator]
             raise ValueError("domain lo is after hi")
 
     @property
@@ -50,6 +84,26 @@ class Domain[T]:
                 f"expected {self.typ.__name__}, got {type(raw).__name__}",
                 raw,
             )
+        if self.members is not None:
+            if raw not in self.members:
+                raise TomlRangeError(
+                    path,
+                    f"unknown {self.name} {raw!r}",
+                    raw,
+                )
+            if self.lo is not None and self.index(raw) < self.index(self.lo):
+                raise TomlRangeError(
+                    path,
+                    f"{raw!r} is below {self.name} {self.lo}",
+                    raw,
+                )
+            if self.hi is not None and self.index(raw) > self.index(self.hi):
+                raise TomlRangeError(
+                    path,
+                    f"{raw!r} is above {self.name} {self.hi}",
+                    raw,
+                )
+            return raw
         if self.lo is not None and raw < self.lo:  # type: ignore[operator]
             raise TomlRangeError(
                 path,
@@ -63,6 +117,79 @@ class Domain[T]:
                 raw,
             )
         return raw
+
+    def index(self, member: T) -> int:
+        if self.members is None:
+            if type(member) is int:
+                return member
+            raise TypeError(f"{self.name} has no member index")
+        try:
+            return self.members.index(member)
+        except ValueError:
+            raise TomlRangeError(
+                ".",
+                f"unknown {self.name} {member!r}",
+                member,
+            ) from None
+
+    def successor(self, member: T) -> T | None:
+        if self.members is not None:
+            nxt = self.index(member) + 1
+            if nxt < len(self.members):
+                return self.members[nxt]
+            if self.wrap:
+                return self.members[0]
+            return None
+        if type(member) is int:
+            if (
+                self.wrap
+                and self.hi is not None
+                and self.lo is not None
+                and member == self.hi
+            ):
+                return self.lo
+            return member + 1  # type: ignore[return-value]
+        return None
+
+    def walk(self, start: T, stop: T) -> Iterator[T]:
+        if self.members is not None:
+            i = self.index(start)
+            j = self.index(stop)
+            if i <= j:
+                yield from self.members[i : j + 1]
+                return
+            if self.wrap:
+                yield from self.members[i:]
+                yield from self.members[: j + 1]
+                return
+            raise TypeError(f"{self.name} width is only defined for int")
+        if type(start) is int and type(stop) is int:
+            if start <= stop:
+                yield from range(start, stop + 1)
+                return
+            if self.wrap and self.lo is not None and self.hi is not None:
+                yield from range(start, self.hi + 1)
+                yield from range(self.lo, stop + 1)
+                return
+            raise TypeError(f"{self.name} width is only defined for int")
+        raise TypeError(f"{self.name} width is only defined for int")
+
+    def width(self, start: T, stop: T) -> int:
+        if self.members is not None:
+            i = self.index(start)
+            j = self.index(stop)
+            if i <= j:
+                return j - i + 1
+            if self.wrap:
+                return len(self.members) - i + j + 1
+            raise TypeError(f"{self.name} width is only defined for int")
+        if type(start) is int and type(stop) is int:
+            if start <= stop:
+                return stop - start + 1
+            if self.wrap and self.lo is not None and self.hi is not None:
+                return (self.hi - start + 1) + (stop - self.lo + 1)
+            raise TypeError(f"{self.name} width is only defined for int")
+        raise TypeError(f"{self.name} width is only defined for int")
 
     def bound(self, raw: Any, *, path: str = ".") -> Bound[T]:
         from tomlrange.bound import Bound  # cycle: Domain ↔ Bound
@@ -83,6 +210,8 @@ class Domain[T]:
     def full(self) -> Bound[T]:
         from tomlrange.bound import Bound  # cycle: Domain ↔ Bound
 
+        if self.members is not None and (self.lo is None or self.hi is None):
+            return Bound(self.members[0], self.members[-1], self)
         if self.lo is None or self.hi is None:
             raise TomlRangeError(".", f"{self.name} domain has no closed lo/hi")
         return Bound(self.lo, self.hi, self)
@@ -107,6 +236,8 @@ class Spec:
     hi: Any = None
     name: str | None = None
     keys: tuple[str, str] = (_FROM, _TO)
+    members: tuple[Any, ...] | None = None
+    wrap: bool = False
     overlap: Overlap = "reject"
     domain: Domain[Any]
 
@@ -126,6 +257,8 @@ class Spec:
             hi=cls.hi,
             name=name,
             keys=cls.keys,
+            members=cls.members,
+            wrap=cls.wrap,
         )
 
     @classmethod

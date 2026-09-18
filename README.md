@@ -81,6 +81,20 @@ Month.parse({"from": 1, "to": 4})
 Month.parse_many([{"from": 1, "to": 4}, {"from": 6, "to": 10}])
 ```
 
+Named discrete order is `members`. `wrap=True` is a cyclic topology — `from`
+after `to` walks across the seam. `from == to` stays a singleton; the full
+cycle is `full()`.
+
+```python
+class Weekday(Spec):
+    typ = str
+    members = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    wrap = True
+
+
+list(Weekday.parse({"from": "sat", "to": "mon"}))  # sat, sun, mon
+```
+
 ## Validation
 
 On one table:
@@ -89,15 +103,19 @@ On one table:
 - keys are exactly `from` and `to` (override with `Domain(..., keys=("start", "end"))`)
 - each endpoint is `type(raw) is domain.typ` (so `1.0` and `True` are not `int`)
 - endpoints sit inside `lo` / `hi` when those are set
-- `from <= to` (a singleton is `{ from = 3, to = 3 }`)
+- when `members` is set, each endpoint is an exact member (unknown → error at `from` / `to`)
+- `from <= to` in domain order (a singleton is `{ from = 3, to = 3 }`); with
+  `wrap=True`, `from` after `to` is a seam walk, not an error
 
 On a list, `overlap=` is `"reject"` (default), `"allow"`, or `"merge"`.
 Reject treats a shared endpoint as overlap (`1–4` and `4–6` fail).
 Adjacent integers (`1–4` then `5–8`) are fine; `merge()` will coalesce them.
+Member domains overlap and merge on member identity, not string order.
 
-`list()`, `len()`, `width`, and `as_range()` are int-only — they raise
-`TypeError` (`"{name} width is only defined for int"`). Membership,
-`as_tuple()`, and `as_table()` work for any ordered `typ`.
+`list()`, `len()`, and `width` work for `int` and for `members`. `as_range()`
+is int-only. Other ordered `typ`s raise `TypeError`
+(`"{name} width is only defined for int"`). Membership, `as_tuple()`, and
+`as_table()` work for any ordered `typ`.
 
 Errors carry a path:
 
@@ -110,9 +128,10 @@ months_ranges[1].to: 13 is above month 12
 - Not a file loader. Call `tomllib` yourself.
 - Not string ranges (`"1-12"`, `"Jan–Apr"`).
 - Not a two-element array (`[1, 12]`). After TOML decode that is a list, not a table.
-- Not wrap-around (`from = 11, to = 2`). Write two spans.
+- Not wrap-around unless the domain sets `wrap=True`.
 - Not `step`. A range table is a closed interval.
-- Not iteration over a non-int domain. Walk dates or strings yourself.
+- Not a free-for-all `str` domain. Names need `members`.
+- Not iteration over a non-int domain without `members`. Walk dates yourself.
 
 ## Install
 
