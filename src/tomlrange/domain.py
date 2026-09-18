@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,10 @@ class Domain[T]:
     cyclic topology: linear domains still reject inverted tables; with
     wrap, `from` after `to` walks across the seam. Cyclic `from == to`
     is a singleton — full coverage is `full()`.
+
+    Optional `aliases` maps extra spellings onto a member before the
+    exact-type and membership checks. Keys may be another type (ISO
+    weekday `1` → `"mon"`). String keys also match case-insensitively.
     """
 
     typ: type[T]
@@ -33,6 +38,7 @@ class Domain[T]:
     keys: tuple[str, str] = (_FROM, _TO)
     members: tuple[T, ...] | None = None
     wrap: bool = False
+    aliases: Mapping[Any, T] | None = None
 
     def __post_init__(self) -> None:
         if len(self.keys) != 2 or self.keys[0] == self.keys[1]:
@@ -68,6 +74,14 @@ class Domain[T]:
                 raise ValueError("domain lo is after hi")
         elif self.lo is not None and self.hi is not None and self.lo > self.hi:  # type: ignore[operator]
             raise ValueError("domain lo is after hi")
+        if self.aliases is not None:
+            table = dict(self.aliases)
+            for value in table.values():
+                if type(value) is not self.typ:
+                    raise TypeError(f"alias targets must be {self.typ.__name__}")
+                if self.members is not None and value not in self.members:
+                    raise ValueError("alias target must be a member")
+            object.__setattr__(self, "aliases", table)
 
     @property
     def start_key(self) -> str:
@@ -77,7 +91,16 @@ class Domain[T]:
     def stop_key(self) -> str:
         return self.keys[1]
 
+    def _canonicalize(self, raw: Any) -> Any:
+        if not self.aliases:
+            return raw
+        mapped = self.aliases.get(raw)
+        if mapped is None and type(raw) is str:
+            mapped = self.aliases.get(raw.lower())
+        return raw if mapped is None else mapped
+
     def convert(self, raw: Any, *, path: str) -> T:
+        raw = self._canonicalize(raw)
         if type(raw) is not self.typ:
             raise TomlRangeError(
                 path,
@@ -221,6 +244,7 @@ class Spec:
     keys: tuple[str, str] = (_FROM, _TO)
     members: tuple[Any, ...] | None = None
     wrap: bool = False
+    aliases: Mapping[Any, Any] | None = None
     overlap: Overlap = "reject"
     domain: Domain[Any]
 
@@ -242,6 +266,7 @@ class Spec:
             keys=cls.keys,
             members=cls.members,
             wrap=cls.wrap,
+            aliases=cls.aliases,
         )
 
     @classmethod
