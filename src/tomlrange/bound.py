@@ -1,6 +1,6 @@
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from tomlrange.domain import Domain
@@ -238,6 +238,32 @@ class Bounds[T]:
         return f"Bounds({inner}, {self.domain.name})"
 
 
+def _length_since_midnight(value: time) -> timedelta:
+    """Clock table `step` only. Endpoint convert still treats time as position."""
+    return timedelta(
+        hours=value.hour,
+        minutes=value.minute,
+        seconds=value.second,
+        microseconds=value.microsecond,
+    )
+
+
+def _clock_step_from_time(raw: time, domain: Domain[Any], *, loc: str) -> timedelta:
+    if raw.tzinfo is not None:
+        raise TomlRangeError(loc, "aware time is not a local step", raw)
+    tick = _hook(domain, "step")
+    if type(tick) is not timedelta:
+        raise TomlRangeError(loc, f"step is not allowed on {domain.name}", raw)
+    length = _length_since_midnight(raw)
+    if length <= timedelta(0) or length % tick:
+        raise TomlRangeError(
+            loc,
+            "step must be a positive multiple of the domain step",
+            raw,
+        )
+    return length
+
+
 def _parse_step(table: Mapping[str, Any], domain: Domain[Any], *, path: str) -> Any:
     if _STEP not in table:
         return None
@@ -245,20 +271,23 @@ def _parse_step(table: Mapping[str, Any], domain: Domain[Any], *, path: str) -> 
     loc = join_path(path, _STEP)
     if _hook(domain, "members") is not None:
         raise TomlRangeError(loc, "step is not allowed on a members domain", raw)
-    if type(raw) is not int:
-        raise TomlRangeError(
-            loc,
-            f"expected int, got {type(raw).__name__}",
-            raw,
-        )
-    if raw <= 0:
-        raise TomlRangeError(loc, "step must be a positive int", raw)
-    if domain.typ is int:
-        return raw
-    tick = _hook(domain, "step")
-    if type(tick) is timedelta:
-        return raw * tick
-    raise TomlRangeError(loc, f"step is not allowed on {domain.name}", raw)
+    if type(raw) is int:
+        if raw <= 0:
+            raise TomlRangeError(loc, "step must be a positive int", raw)
+        if domain.typ is int:
+            return raw
+        tick = _hook(domain, "step")
+        if type(tick) is timedelta:
+            return raw * tick
+        raise TomlRangeError(loc, f"step is not allowed on {domain.name}", raw)
+    if domain.typ is time and type(raw) is time:
+        return _clock_step_from_time(raw, domain, loc=loc)
+    expected = "int or local time" if domain.typ is time else "int"
+    raise TomlRangeError(
+        loc,
+        f"expected {expected}, got {type(raw).__name__}",
+        raw,
+    )
 
 
 def _step_count(bound: Bound[Any]) -> int | None:

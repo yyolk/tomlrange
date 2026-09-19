@@ -115,13 +115,22 @@ quarter = Clock.parse(
 )
 assert quarter.step == timedelta(minutes=15)
 assert quarter.domain.step == timedelta(minutes=1)
+
+half = Clock.parse(
+    tomllib.loads("open = { from = 09:00:00, to = 17:00:00, step = 00:30:00 }")["open"]
+)
+assert half.step == timedelta(minutes=30)
+assert half.as_table()["step"] == 30
 ```
 
 `elapsed` is derived walk length (`(width - 1) * step`) — endpoints stay
 `time`. `wrap=True` allows overnight `{ from = 22:00:00, to = 02:00:00 }`
 (`elapsed` is then the wrap walk, 4 hours). A singleton is one tick, not
 a full day. Optional table `step` is a positive int count of the domain
-grain (Clock default one minute, so `step = 15` is 15 minutes). Omit it
+grain (Clock default one minute, so `step = 15` is 15 minutes). On Clock,
+a naive local time is also accepted as length-since-midnight
+(`step = 00:30:00` is 30 minutes) when that length is a positive multiple
+of `Domain.step`. `as_table()` always emits the int count. Omit `step`
 and walk stays `Domain.step`, or `+1` on ints.
 
 ## Validation
