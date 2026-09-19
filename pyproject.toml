@@ -1,6 +1,6 @@
 [project]
 name = "tomlrange"
-version = "0.3.0"
+version = "0.3.1"
 description = "Parse and validate { from, to } tables from decoded TOML."
 readme = "README.md"
 license = { file = "LICENSE" }
